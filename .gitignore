@@ -1,0 +1,10 @@
+.vscode/
+.venv/
+uploads/
+backend/venv/
+backend/uploaded_cases/
+backend/uploads/
+frontend/node_modules/
+__pycache__/
+*.pyc
+backend/.env

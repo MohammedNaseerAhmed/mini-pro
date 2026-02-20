@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pymongo
+python-dotenv
+python-multipart
+mysql-connector-python
+pdfplumber
+pytesseract
+Pillow
+numpy
+scikit-learn
+sentence-transformers
+transformers
+torch
