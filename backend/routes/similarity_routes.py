@@ -62,7 +62,8 @@ def find_similar_cases(case_number: str, top_k: int = 5):
 
     candidates = db["raw_judgments"].find(
         {"case_number": {"$ne": case_number}},
-        {"case_number": 1, "title": 1, "court_name": 1, "acts_sections": 1, "judgment_text.clean_text": 1, "judgment_text.raw_text": 1},
+        {"_id": 1, "case_number": 1, "title": 1, "court_name": 1, "acts_sections": 1,
+         "case_metadata": 1, "judgment_text.clean_text": 1, "judgment_text.raw_text": 1},
     ).limit(2500)
 
     scored = []
@@ -88,9 +89,11 @@ def find_similar_cases(case_number: str, top_k: int = 5):
             (
                 final_score,
                 {
-                    "case_number": target_cn,
-                    "title": doc.get("title", ""),
-                    "court": doc.get("court_name", ""),
+                    "case_id":      str(doc.get("_id", "")),
+                    "case_number":  target_cn,
+                    "title":        doc.get("title", ""),
+                    "court":        doc.get("court_name") or doc.get("case_metadata", {}).get("court_name", ""),
+                    "case_type":    doc.get("case_metadata", {}).get("case_type", ""),
                     "similarity_score": float(round(final_score, 4)),
                     "matched_keywords": sorted(list(inter))[:12],
                 },

@@ -12,3 +12,4 @@ scikit-learn
 sentence-transformers
 transformers
 torch
+deep-translator

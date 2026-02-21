@@ -8,7 +8,7 @@ from pymongo import ReturnDocument
 
 from backend.ai.embeddings import get_embedding
 from backend.ai.predictor import predict_case_with_history
-from backend.ai.summarizer import summarize_structured
+from backend.ai.summarizer import make_basic_summary, summarize_structured
 from backend.ai.text_pipeline import detect_language_code, normalize_text, split_paragraphs
 from backend.ai.translator import translate_text
 from backend.ai.vector_store import vector_store
@@ -39,11 +39,12 @@ def _extract_facts(clean_text: str) -> List[str]:
     return sentences[:5]
 
 
-def _translate_text(clean_text: str) -> Dict[str, Dict[str, str]]:
-    translated_map = translate_text(clean_text, target_languages=["en", "hi", "te"])
-    if not translated_map:
-        translated_map = {"en": {"translated_text": clean_text, "model_used": "fallback-rule"}}
-    return translated_map
+def _v(val):
+    """Return None if val is falsy or 'unknown', else the stripped string."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    return None if (not s or s.lower() == "unknown") else s
 
 
 def _chunk_text(text: str, chunk_size: int = 180, overlap: int = 40) -> List[str]:
@@ -109,17 +110,71 @@ def _get_case_id_mysql(case_number: str) -> Optional[int]:
         return None
 
 
-def _upsert_case_mysql(case_number: str, title: str, clean_text: str) -> Optional[int]:
+def _upsert_case_mysql(case_number: str, title: str, clean_text: str, meta: Optional[Dict] = None) -> Optional[int]:
+    """Insert or update the cases table with all extracted metadata. Never puts raw text into SQL."""
+    # Guard: skip if no real case number was detected yet
+    if not case_number or case_number.startswith("CASE-"):
+        _log_system("pipeline", "sql_case_upsert_skipped", f"No real case_number: {case_number}")
+        return None
+
+    meta = meta or {}
+
+    # Build title from parties only — never accept raw OCR garbage
+    p = _v(meta.get("petitioner"))
+    r = _v(meta.get("respondent"))
+    if p and r:
+        canonical_title = f"{p} vs {r}"
+    elif p:
+        canonical_title = p
+    elif r:
+        canonical_title = r
+    else:
+        canonical_title = _v(title) or case_number
+
     try:
         _mysql_execute(
             """
-            INSERT INTO cases (case_number, title, source)
-            VALUES (%s, %s, %s)
+            INSERT INTO cases (
+                case_number, title, court_name, court_level, bench,
+                case_type, filing_date, registration_date, decision_date,
+                petitioner, respondent, judge_names, advocates,
+                disposition, citation, source
+            )
+            VALUES (%s, %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                title = VALUES(title),
-                source = VALUES(source)
+                title             = VALUES(title),
+                court_name        = COALESCE(VALUES(court_name),       court_name),
+                court_level       = COALESCE(VALUES(court_level),       court_level),
+                bench             = COALESCE(VALUES(bench),             bench),
+                case_type         = COALESCE(VALUES(case_type),         case_type),
+                filing_date       = COALESCE(VALUES(filing_date),       filing_date),
+                registration_date = COALESCE(VALUES(registration_date), registration_date),
+                decision_date     = COALESCE(VALUES(decision_date),     decision_date),
+                petitioner        = COALESCE(VALUES(petitioner),        petitioner),
+                respondent        = COALESCE(VALUES(respondent),        respondent),
+                judge_names       = COALESCE(VALUES(judge_names),       judge_names),
+                advocates         = COALESCE(VALUES(advocates),         advocates),
+                disposition       = COALESCE(VALUES(disposition),       disposition),
+                citation          = COALESCE(VALUES(citation),          citation)
             """,
-            (case_number, title, "upload"),
+            (
+                case_number,
+                canonical_title,
+                _v(meta.get("court_name")),
+                _v(meta.get("court_level")),
+                _v(meta.get("bench")),
+                _v(meta.get("case_type")),
+                _v(meta.get("filing_date")),
+                _v(meta.get("registration_date")),
+                _v(meta.get("decision_date")),
+                _v(meta.get("petitioner")),
+                _v(meta.get("respondent")),
+                _v(meta.get("judge_names")),
+                _v(meta.get("advocates")),
+                _v(meta.get("disposition")),
+                _v(meta.get("citation")),
+                "upload",
+            ),
         )
         return _get_case_id_mysql(case_number)
     except Exception as exc:
@@ -230,7 +285,13 @@ def _process_stage(job: Dict[str, Any]) -> str:
         language_code = detect_language_code(normalized)
         paragraphs = split_paragraphs(normalized)
         title = _first_line_title(normalized)
-        case_id_mysql = _upsert_case_mysql(case_number, title, normalized)
+
+        # Pull stored metadata (set by upload_routes) to populate SQL fully
+        stored_meta = case_doc.get("case_metadata") or {}
+        if stored_meta.get("title"):
+            title = stored_meta["title"]
+
+        case_id_mysql = _upsert_case_mysql(case_number, title, normalized, meta=stored_meta)
 
         db["raw_judgments"].update_one(
             {"_id": case_id},
@@ -257,6 +318,7 @@ def _process_stage(job: Dict[str, Any]) -> str:
         case_id_mysql = case_doc.get("case_id_mysql") or _get_case_id_mysql(case_number)
         facts = _extract_facts(clean_text)
         structured_summary = summarize_structured(clean_text)
+        basic_summary = make_basic_summary(clean_text)           # ← NEW: plain-English 6-sentence summary
         summary = "\n".join([f"- {p}" for p in structured_summary.get("key_points", [])])
 
         db["case_facts"].update_one(
@@ -272,6 +334,7 @@ def _process_stage(job: Dict[str, Any]) -> str:
                     "case_number": case_number,
                     "summary": summary,
                     "short_summary": structured_summary.get("short_summary"),
+                    "basic_summary": basic_summary,              # ← stored for translate route
                     "detailed_summary": structured_summary.get("detailed_summary"),
                     "key_points": structured_summary.get("key_points"),
                     "updated_at": _utcnow(),
@@ -302,13 +365,32 @@ def _process_stage(job: Dict[str, Any]) -> str:
         return "summarized"
 
     if stage == "summarized":
-        clean_text = clean_text or _clean_text(raw_text)
         case_id_mysql = case_doc.get("case_id_mysql") or _get_case_id_mysql(case_number)
-        translation = _translate_text(clean_text)
-        primary_lang = "en" if "en" in translation else next(iter(translation.keys()))
+
+        # ── FIX: translate the summary, NOT the raw document ─────────────────
+        # Load stored summary to build compact translation source
+        stored_sum = db["case_summaries"].find_one({"case_id": case_id})
+        if stored_sum:
+            basic   = stored_sum.get("basic_summary") or stored_sum.get("short_summary") or ""
+            kpoints = stored_sum.get("key_points") or []
+        else:
+            clean_text = clean_text or _clean_text(raw_text)
+            structured_summary = summarize_structured(clean_text)
+            basic   = make_basic_summary(clean_text)
+            kpoints = structured_summary.get("key_points", [])
+
+        key_str       = "\n".join([f"{i+1}. {p}" for i, p in enumerate(kpoints)])
+        translate_src = f"{basic}\n\nKey Points:\n{key_str}".strip() or \
+                        (clean_text or _clean_text(raw_text))[:3000]  # final fallback
+
+        translation = translate_text(translate_src, target_languages=["hi", "te"])
+        if not translation:
+            translation = {"en": {"translated_text": translate_src, "model_used": "fallback"}}
+
+        primary_lang    = "hi" if "hi" in translation else next(iter(translation.keys()))
         primary_payload = translation.get(primary_lang, {})
-        primary_translation = primary_payload.get("translated_text", clean_text)
-        primary_model = primary_payload.get("model_used", "fallback-rule")
+        primary_translation = primary_payload.get("translated_text", translate_src)
+        primary_model       = primary_payload.get("model_used", "fallback")
 
         db["case_translations"].update_one(
             {"case_id": case_id},

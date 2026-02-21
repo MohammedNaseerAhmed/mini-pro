@@ -1,5 +1,4 @@
-﻿# mini-pro
-# Legal AI (Upload-Only Pipeline)
+﻿# Legal AI (Upload-Only Pipeline)
 
 Legal AI backend + frontend for court judgment processing.
 
@@ -168,5 +167,3 @@ Response format:
 ## License
 
 Internal/academic project usage.
-
-
