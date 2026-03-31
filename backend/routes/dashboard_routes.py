@@ -99,3 +99,32 @@ def sql_health():
             cursor.close()
         if conn:
             conn.close()
+
+
+@router.get("/audit/{case_id}")
+def audit_logs(case_id: str):
+    conn = None
+    cursor = None
+    try:
+        conn = get_mysql_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT id, case_id, rule_based_json, ai_json, final_json, learning_applied_json,
+                   is_rule_valid, used_ai, confidence_score,
+                   quality_gate_passed, quality_gate_reasons, sql_write_allowed,
+                   created_at
+            FROM case_audit_logs
+            WHERE case_id = %s
+            ORDER BY created_at DESC
+            """,
+            (case_id,),
+        )
+        return {"case_id": case_id, "items": cursor.fetchall() or []}
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

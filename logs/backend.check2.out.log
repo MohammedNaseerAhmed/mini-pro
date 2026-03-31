@@ -1,0 +1,47 @@
+
+> mini-pro@1.0.0 backend:dev
+> powershell -ExecutionPolicy Bypass -File scripts/run-backend.ps1
+
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+ MongoDB Atlas connected
+[startup] Vector store loaded 17 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 17 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 18 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 18 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 20 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 20 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 21 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected

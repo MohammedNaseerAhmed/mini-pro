@@ -36,6 +36,7 @@ CASE_TYPE_MAP: Dict[str, str] = {
     "WP":      "Writ Petition",
     "WPC":     "Writ Petition (Civil)",
     "CWP":     "Writ Petition",
+    "WPA":     "Writ Petition",
     "BA":      "Bail Application",
     "MC":      "Maintenance Case",
     "FC":      "Family Court Case",
@@ -64,6 +65,7 @@ _PREFIX_CATEGORY: Dict[str, str] = {
     "CRL": "Criminal", "CRLA": "Criminal", "CC": "Criminal", "BA": "Criminal",
     "OS":  "Civil",    "CS":   "Civil",    "AS": "Civil",    "SA": "Civil",
     "WP":  "Writ",     "CWP":  "Writ",     "WPC": "Writ",
+    "WPA": "Writ",
     "MC":  "Family",   "FC":   "Family",   "FCOP": "Family", "MAT": "Family",
 }
 
@@ -252,6 +254,17 @@ _PARTY_BAD_KEYWORDS = [
     "through", "represented", "government of", "ministry of",
 ]
 
+_PARTY_STOPWORDS = {
+    "the", "and", "or", "vs", "versus", "v", "v/s",
+    "petitioner", "respondent", "respondents", "appellant", "plaintiff", "defendant",
+    "private", "others", "anr", "ors",
+}
+
+_PARTY_TRAILING_GARBAGE = re.compile(
+    r"\b(and|others?|respondents?|petitioner|appellant|defendant|plaintiff|anr|ors)\b\.?$",
+    re.IGNORECASE,
+)
+
 
 def _clean_party_name(raw: str) -> Optional[str]:
     """
@@ -270,6 +283,14 @@ def _clean_party_name(raw: str) -> Optional[str]:
     # Take first line only, strip common punctuation
     name = raw.strip().split("\n")[0].strip(" .:-,|")
     name = re.sub(r"\s{2,}", " ", name)
+    name = re.sub(r"\[[^\]]*\]", "", name).strip(" .:-,|")
+
+    # Remove frequent trailing legal noise (e.g., "... and", "... respondents")
+    for _ in range(2):
+        updated = _PARTY_TRAILING_GARBAGE.sub("", name).strip(" .:-,|")
+        if updated == name:
+            break
+        name = updated
 
     # Rule: length
     if len(name) < 3 or len(name) > 80:
@@ -292,6 +313,15 @@ def _clean_party_name(raw: str) -> Optional[str]:
 
     # Rule: must contain at least one word of ≥2 letters (not just initials)
     if not re.search(r"[A-Za-z]{2,}", name):
+        return None
+
+    # Rule: reject obvious filler-only names (e.g., "the", "private respondents and")
+    words = re.findall(r"[A-Za-z]+", name.lower())
+    if not words:
+        return None
+    if all(w in _PARTY_STOPWORDS for w in words):
+        return None
+    if len(words) <= 2 and any(w in _PARTY_STOPWORDS for w in words):
         return None
 
     return name
@@ -379,10 +409,10 @@ def _extract_court(lines: List[str]) -> Tuple[Optional[str], Optional[str], Opti
 def _extract_case_number(
     lines: List[str],
     court_line_idx: int,
-) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[int]]:
+) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str], Optional[int]]:
     """
     UPPER ZONE (lines 5–25): Extract case number, raw prefix, number, year.
-    Returns (formatted_case_number, prefix, case_type, year).
+    Returns (case_number, case_prefix, case_type, case_number_numeric, case_year).
     Skips lines > 120 chars and lines containing PRESENT/CORAM.
     """
     upper_zone = "\n".join(lines[4:26])   # lines 5–26 (0-indexed 4–25)
@@ -421,6 +451,10 @@ def _extract_case_number(
             else:
                 continue
 
+            number = str(number).strip()
+            if not re.fullmatch(r"\d{1,6}", number):
+                continue
+
             norm = _normalize_prefix(prefix)
             case_type = CASE_TYPE_MAP.get(norm) or CASE_TYPE_MAP.get(
                 prefix.upper().replace(".", "").replace(" ", ""), None
@@ -428,20 +462,20 @@ def _extract_case_number(
 
             # Proximity to court line
             proximity = abs(line_offset - (court_line_idx - 4))
-            formatted = m.group(0).strip()
-            candidates.append((proximity, formatted, prefix, case_type, year))
+            canonical_case_number = f"{norm} {number} of {year}"
+            candidates.append((proximity, canonical_case_number, norm, case_type, number, year))
 
     if not candidates:
-        return None, None, None, None
+        return None, None, None, None, None
 
     candidates.sort(key=lambda x: x[0])
-    _, cn, prefix, case_type, year = candidates[0]
+    _, cn, case_prefix, case_type, case_number_numeric, case_year = candidates[0]
 
     # Validate: must contain 4-digit year
     if not re.search(r"(19|20)\d{2}", cn):
-        return None, None, None, None
+        return None, None, None, None, None
 
-    return cn, prefix, case_type, year
+    return cn, case_prefix, case_type, case_number_numeric, case_year
 
 
 def _extract_parties(
@@ -455,67 +489,76 @@ def _extract_parties(
       3. Between / And block
       4. Petitioner / Respondent keyword lines
     """
-    zone_text = "\n".join(lines[5:80])
-    zone_lines = lines[5:80]
-    petitioner: Optional[str] = None
-    respondent: Optional[str] = None
+    def _extract_from_zone(zone_lines: List[str]) -> Tuple[Optional[str], Optional[str]]:
+        zone_text = "\n".join(zone_lines)
+        petitioner: Optional[str] = None
+        respondent: Optional[str] = None
 
-    # ── Priority 1: A Versus/V/s/vs B on same line ────────────────────────────
-    inline_m = re.search(
-        r"([A-Za-z][^\n]{2,100})\s+(?:Versus|Vs\.?|V/[Ss])\s+([A-Za-z][^\n]{2,100})",
-        zone_text, re.IGNORECASE
-    )
-    if inline_m:
-        p = _clean_party_name(inline_m.group(1))
-        r = _clean_party_name(inline_m.group(2))
-        if p and r:
-            return p, r
+        # ── Priority 1: A Versus/V/s/vs B on same line ───────────────────────
+        inline_m = re.search(
+            r"([A-Za-z][^\n]{2,100})\s+(?:Versus|Vs\.?|V/[Ss])\s+([A-Za-z][^\n]{2,100})",
+            zone_text, re.IGNORECASE
+        )
+        if inline_m:
+            p = _clean_party_name(inline_m.group(1))
+            r = _clean_party_name(inline_m.group(2))
+            if p and r:
+                return p, r
 
-    # ── Priority 2: A \n Versus \n B (across lines) ───────────────────────────
-    for i, line in enumerate(zone_lines):
-        up = line.strip().upper()
-        if re.match(r"^(VERSUS|VS\.?|V/S)$", up):
-            # petitioner = line before, respondent = line after
-            if i > 0:
-                petitioner = _clean_party_name(zone_lines[i - 1])
-            if i + 1 < len(zone_lines):
-                respondent = _clean_party_name(zone_lines[i + 1])
+        # ── Priority 2: A \n Versus \n B (across lines) ──────────────────────
+        for i, line in enumerate(zone_lines):
+            up = line.strip().upper()
+            if re.match(r"^(VERSUS|VS\.?|V/S)$", up):
+                if i > 0:
+                    petitioner = _clean_party_name(zone_lines[i - 1])
+                if i + 1 < len(zone_lines):
+                    respondent = _clean_party_name(zone_lines[i + 1])
+                if petitioner and respondent:
+                    return petitioner, respondent
+
+        # ── Priority 3: A\n\nVs.\n\nB (multiline regex) ──────────────────────
+        vs_m = re.search(
+            r"^([^\n]{3,120})\s*\n\s*(?:Vs?\.?|Versus|V/[Ss])\s*\n\s*([^\n]{3,120})$",
+            zone_text, re.IGNORECASE | re.MULTILINE
+        )
+        if vs_m:
+            p = _clean_party_name(vs_m.group(1))
+            r = _clean_party_name(vs_m.group(2))
+            if p and r:
+                return p, r
+
+        # ── Priority 4: Between / And block ───────────────────────────────────
+        btw_m = re.search(
+            r"Between[:\s]+(.+?)\s+And[:\s]+(.+?)(?:\n\n|\Z)",
+            zone_text, re.IGNORECASE | re.DOTALL
+        )
+        if btw_m:
+            petitioner = _clean_party_name(btw_m.group(1))
+            respondent = _clean_party_name(btw_m.group(2))
             if petitioner and respondent:
                 return petitioner, respondent
 
-    # ── Priority 3: A\n\nVs.\n\nB (multiline regex) ───────────────────────────
-    vs_m = re.search(
-        r"^([^\n]{3,120})\s*\n\s*(?:Vs?\.?|Versus|V/[Ss])\s*\n\s*([^\n]{3,120})$",
-        zone_text, re.IGNORECASE | re.MULTILINE
-    )
-    if vs_m:
-        p = _clean_party_name(vs_m.group(1))
-        r = _clean_party_name(vs_m.group(2))
-        if p and r:
-            return p, r
+        # ── Priority 5: Keyword lines ─────────────────────────────────────────
+        for line in zone_lines:
+            up = line.strip().upper()
+            if re.match(r"^(PETITIONER|PLAINTIFF|COMPLAINANT|APPELLANT)\s*[:\-]", up):
+                raw = re.sub(r"^(PETITIONER|PLAINTIFF|COMPLAINANT|APPELLANT)\s*[:\-]\s*", "", line.strip(), flags=re.IGNORECASE)
+                petitioner = _clean_party_name(raw)
+            elif re.match(r"^(RESPONDENT|DEFENDANT|OPPOSITE PARTY|ACCUSED)\s*[:\-]", up):
+                raw = re.sub(r"^(RESPONDENT|DEFENDANT|OPPOSITE PARTY|ACCUSED)\s*[:\-]\s*", "", line.strip(), flags=re.IGNORECASE)
+                respondent = _clean_party_name(raw)
 
-    # ── Priority 4: Between / And block ──────────────────────────────────────
-    btw_m = re.search(
-        r"Between[:\s]+(.+?)\s+And[:\s]+(.+?)(?:\n\n|\Z)",
-        zone_text, re.IGNORECASE | re.DOTALL
-    )
-    if btw_m:
-        petitioner = _clean_party_name(btw_m.group(1))
-        respondent = _clean_party_name(btw_m.group(2))
-        if petitioner and respondent:
-            return petitioner, respondent
+        return petitioner, respondent
 
-    # ── Priority 5: Keyword lines ──────────────────────────────────────────────
-    for line in zone_lines:
-        up = line.strip().upper()
-        if re.match(r"^(PETITIONER|PLAINTIFF|COMPLAINANT|APPELLANT)\s*[:\-]", up):
-            raw = re.sub(r"^(PETITIONER|PLAINTIFF|COMPLAINANT|APPELLANT)\s*[:\-]\s*", "", line.strip(), flags=re.IGNORECASE)
-            petitioner = _clean_party_name(raw)
-        elif re.match(r"^(RESPONDENT|DEFENDANT|OPPOSITE PARTY|ACCUSED)\s*[:\-]", up):
-            raw = re.sub(r"^(RESPONDENT|DEFENDANT|OPPOSITE PARTY|ACCUSED)\s*[:\-]\s*", "", line.strip(), flags=re.IGNORECASE)
-            respondent = _clean_party_name(raw)
+    # Header-first extraction lock: use strict top zone first.
+    header_zone = lines[:40]
+    p, r = _extract_from_zone(header_zone)
+    if p and r:
+        return p, r
 
-    return petitioner, respondent
+    # Fallback to broader zone only when header extraction is incomplete.
+    p2, r2 = _extract_from_zone(lines[5:80])
+    return p or p2, r or r2
 
 
 def _extract_judges(lines: List[str]) -> Optional[str]:
@@ -710,7 +753,7 @@ def extract_case_metadata(full_text: str) -> Dict[str, Optional[str]]:
             break
 
     # STEP 2: Case number (UPPER ZONE — lines 5–25)
-    case_number, prefix, case_type, case_year = _extract_case_number(lines, court_line_idx)
+    case_number, case_prefix, case_type, case_number_numeric, case_year = _extract_case_number(lines, court_line_idx)
 
     # STEP 3: Case type — determined solely from prefix in CASE_TYPE_MAP (no AI)
 
@@ -732,6 +775,8 @@ def extract_case_metadata(full_text: str) -> Dict[str, Optional[str]]:
         case_number = None
         case_type = None
         case_year = None
+        case_prefix = None
+        case_number_numeric = None
 
     # court_level must exist (don't store if absent)
     if not court_level:
@@ -752,6 +797,9 @@ def extract_case_metadata(full_text: str) -> Dict[str, Optional[str]]:
     return {
         # Core identification
         "case_number":       case_number,
+        "case_prefix":       case_prefix,
+        "case_number_numeric": case_number_numeric,
+        "case_year":         str(case_year) if case_year else None,
         "title":             title,
         # Court info
         "court_name":        court_name,
@@ -759,7 +807,6 @@ def extract_case_metadata(full_text: str) -> Dict[str, Optional[str]]:
         "bench":             bench,
         # Case classification
         "case_type":         case_type,
-        "case_year":         str(case_year) if case_year else None,
         # Dates
         "filing_date":       filing_date,
         "registration_date": registration_date,

@@ -4,6 +4,9 @@ USE legal_ai;
 CREATE TABLE IF NOT EXISTS cases (
     case_id INT AUTO_INCREMENT PRIMARY KEY,
     case_number VARCHAR(255) UNIQUE,
+    case_prefix VARCHAR(20),
+    case_number_numeric VARCHAR(20),
+    case_year INT,
     title TEXT,
     court_name VARCHAR(255),
     court_level VARCHAR(50),
@@ -22,6 +25,11 @@ CREATE TABLE IF NOT EXISTS cases (
     pdf_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS case_prefix VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS case_number_numeric VARCHAR(20),
+    ADD COLUMN IF NOT EXISTS case_year INT;
 
 CREATE TABLE IF NOT EXISTS case_acts (
     act_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -70,6 +78,38 @@ CREATE TABLE IF NOT EXISTS case_predictions (
     model_version VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS case_audit_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    case_id VARCHAR(100),
+    raw_text LONGTEXT,
+    rule_based_json JSON,
+    ai_json JSON,
+    final_json JSON,
+    learning_applied_json JSON,
+    is_rule_valid BOOLEAN DEFAULT FALSE,
+    used_ai BOOLEAN DEFAULT FALSE,
+    confidence_score FLOAT DEFAULT 0.0,
+    quality_gate_passed BOOLEAN DEFAULT FALSE,
+    quality_gate_reasons JSON,
+    sql_write_allowed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE case_audit_logs
+    ADD COLUMN IF NOT EXISTS quality_gate_passed BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS quality_gate_reasons JSON,
+    ADD COLUMN IF NOT EXISTS sql_write_allowed BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS learning_feedback (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    case_id VARCHAR(100),
+    field_name VARCHAR(50),
+    predicted_value TEXT,
+    corrected_value TEXT,
+    source ENUM('rule', 'ai', 'final', 'manual') DEFAULT 'manual',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS similar_cases (

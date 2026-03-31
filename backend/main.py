@@ -1,3 +1,9 @@
+import logging
+import os
+import re
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,19 +15,38 @@ from backend.routes.similarity_routes import router as similarity_router
 from backend.routes.chatbot_routes import router as chatbot_router
 from backend.routes.prediction_routes import router as prediction_router
 from backend.routes.dashboard_routes import router as dashboard_router
+from backend.routes.feedback_routes import router as feedback_router
 from backend.routes.manual_prediction_routes import router as manual_prediction_router
 from backend.services.pipeline_worker import pipeline_worker
 from backend.ai.vector_store import vector_store
 
-ALLOWED_ORIGINS = [
+DEFAULT_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5177",
+    "http://127.0.0.1:5177",
 ]
+env_allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "").split(",")
+    if origin.strip()
+]
+ALLOWED_ORIGINS = list(dict.fromkeys(DEFAULT_ALLOWED_ORIGINS + env_allowed_origins))
+ALLOWED_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
+
+def _is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in ALLOWED_ORIGINS:
+        return True
+    return bool(re.match(ALLOWED_ORIGIN_REGEX, origin))
 
 app = FastAPI(title="Legal AI Backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,7 +59,7 @@ app.add_middleware(
 async def global_exception_handler(request: Request, exc: Exception):
     origin = request.headers.get("origin", "")
     headers = {
-        "Access-Control-Allow-Origin":      origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0],
+        "Access-Control-Allow-Origin":      origin if _is_allowed_origin(origin) else ALLOWED_ORIGINS[0],
         "Access-Control-Allow-Credentials": "true",
     }
     return JSONResponse(
@@ -49,6 +74,7 @@ app.include_router(similarity_router)
 app.include_router(chatbot_router)
 app.include_router(prediction_router)
 app.include_router(dashboard_router)
+app.include_router(feedback_router)
 app.include_router(manual_prediction_router)
 # ---- startup ----
 @app.on_event("startup")

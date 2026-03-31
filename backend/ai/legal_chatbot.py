@@ -30,9 +30,15 @@ Safety rules:
   - Translate only explanation text; never translate names/sections/case numbers
 """
 
+import logging
 import re
 from typing import List, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
+from backend.ai.groq_client import groq_generate, groq_is_configured
+from backend.ai.ollama_client import ollama_generate, ollama_is_configured
+from backend.ai.prompt_builder import _build_general_legal_prompt, build_chat_prompt
 from backend.ai.vector_store import vector_store
 from backend.database.mongo import get_db
 
@@ -111,8 +117,8 @@ def _classify_intent(question: str) -> str:
         return "metadata"
     if is_content:
         return "rag_content"
-    # Default: try metadata first, fall back to RAG
-    return "metadata"
+    # Default: try RAG content so general questions get document-grounded answers
+    return "rag_content"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -208,6 +214,74 @@ def _simplify(text: str) -> str:
     return text
 
 
+def _is_weak_answer(answer: str) -> bool:
+    answer_text = (answer or "").strip()
+    if len(answer_text) < 40:
+        return True
+    weak_signals = [
+        "not mentioned",
+        "not provided",
+        "do not know",
+        "don't know",
+        "cannot determine",
+    ]
+    lower = answer_text.lower()
+    return any(signal in lower for signal in weak_signals)
+
+
+def _score_answer_quality(answer: str, context: str) -> float:
+    """
+    Lightweight quality scorer:
+    - penalize weak/very short answers
+    - reward lexical overlap with context (grounding proxy)
+    """
+    ans = (answer or "").strip()
+    if not ans:
+        return 0.0
+    if _is_weak_answer(ans):
+        return 0.1
+
+    token_re = re.compile(r"[a-zA-Z]{3,}")
+    ans_tokens = set(token_re.findall(ans.lower()))
+    ctx_tokens = set(token_re.findall((context or "").lower()))
+    if not ans_tokens:
+        return 0.2
+
+    overlap = len(ans_tokens & ctx_tokens) / max(1, len(ans_tokens))
+    length_bonus = min(len(ans) / 500.0, 0.25)
+    return round(0.4 + overlap + length_bonus, 3)
+
+
+def smart_chatbot(question: str, context: str, chat_history: List[dict] = None) -> Optional[str]:
+    prompt = build_chat_prompt(question, context, chat_history=chat_history)
+    candidates: List[Tuple[float, str, str]] = []
+
+    # Accuracy mode: try both models when available and choose best-scored answer.
+    if ollama_is_configured():
+        try:
+            ollama_answer = (ollama_generate(prompt) or "").strip()
+            if ollama_answer:
+                candidates.append((_score_answer_quality(ollama_answer, context), ollama_answer, "ollama"))
+        except Exception as e:
+            logger.warning("[smart_chatbot] Ollama failed: %s", e)
+
+    if groq_is_configured():
+        try:
+            groq_answer = (groq_generate(prompt) or "").strip()
+            if groq_answer:
+                candidates.append((_score_answer_quality(groq_answer, context), groq_answer, "groq"))
+        except Exception as e:
+            logger.warning("[smart_chatbot] Groq failed: %s", e)
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_text  = candidates[0][1].strip()
+    best_model = candidates[0][2]
+    return (best_text, best_model) if best_text else None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. ROUTE A — METADATA ANSWER
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -260,13 +334,14 @@ def _answer_metadata(question: str, case_number: Optional[str] = None) -> dict:
 # 5. ROUTE B — RAG CONTENT ANSWER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _lexical_retrieve(question: str, k: int = 5) -> List[Tuple[str, str]]:
+def _lexical_retrieve(question: str, k: int = 5, case_number: Optional[str] = None) -> List[Tuple[str, str]]:
     db = get_db()
     token_re = re.compile(r"[a-zA-Z]{3,}")
     q_tokens = set(token_re.findall(question.lower()))
     if not q_tokens:
         return []
-    chunks = list(db["case_chunks"].find({}, {"case_number": 1, "text": 1}).limit(3000))
+    query = {"case_number": case_number} if case_number else {}
+    chunks = list(db["case_chunks"].find(query, {"case_number": 1, "text": 1, "chunk_type": 1}).limit(3000))
     scored = []
     for chunk in chunks:
         txt = (chunk.get("text") or "").lower()
@@ -277,14 +352,20 @@ def _lexical_retrieve(question: str, k: int = 5) -> List[Tuple[str, str]]:
         inter = len(q_tokens & c_tokens)
         if inter == 0:
             continue
-        scored.append((inter / max(1, len(q_tokens | c_tokens)), cn, chunk.get("text", "")))
+        score = inter / max(1, len(q_tokens | c_tokens))
+        if chunk.get("chunk_type") == "header":
+            score += 0.25
+        scored.append((score, cn, chunk.get("text", "")))
     return [(cn, txt) for _, cn, txt in sorted(scored, reverse=True)[:k]]
 
 
-def _vector_retrieve(question: str, k: int = 4) -> List[Tuple[str, str]]:
+def _vector_retrieve(question: str, k: int = 4, case_number: Optional[str] = None) -> List[Tuple[str, str]]:
     db = get_db()
     results = []
-    for cn in vector_store.search(question, k=k):
+    candidate_cases = vector_store.search(question, k=k * 2)
+    for cn in candidate_cases:
+        if case_number and cn != case_number:
+            continue
         doc = db["raw_judgments"].find_one({"case_number": cn})
         if not doc:
             continue
@@ -292,12 +373,58 @@ def _vector_retrieve(question: str, k: int = 4) -> List[Tuple[str, str]]:
                or doc.get("judgment_text", {}).get("raw_text", ""))
         if txt:
             results.append((cn, txt[:1500]))
+        if len(results) >= k:
+            break
     return results
 
 
-def _get_contexts(question: str) -> List[Tuple[str, str]]:
+def _header_retrieve(question: str, k: int = 2, case_number: Optional[str] = None) -> List[Tuple[str, str]]:
+    db = get_db()
+    token_re = re.compile(r"[a-zA-Z]{3,}")
+    q_tokens = set(token_re.findall(question.lower()))
+    query = {"chunk_type": "header"}
+    if case_number:
+        query["case_number"] = case_number
+
+    header_chunks = list(db["case_chunks"].find(query, {"case_number": 1, "text": 1}).limit(200))
+    scored = []
+    for chunk in header_chunks:
+        text = chunk.get("text") or ""
+        cn = chunk.get("case_number")
+        if not text or not cn:
+            continue
+        tokens = set(token_re.findall(text.lower()))
+        overlap = len(q_tokens & tokens) if q_tokens else 1
+        scored.append((overlap, cn, text))
+
+    if scored:
+        return [(cn, txt) for _, cn, txt in sorted(scored, reverse=True)[:k]]
+
+    # Backward compatibility for already-processed cases without header chunks.
+    fallback_query = {"case_number": case_number} if case_number else {}
+    docs = list(
+        db["raw_judgments"].find(
+            fallback_query,
+            {"case_number": 1, "judgment_text.raw_text": 1, "created_at": 1},
+        ).sort("created_at", -1).limit(k)
+    )
+    out = []
+    for doc in docs:
+        cn = doc.get("case_number")
+        raw = (doc.get("judgment_text", {}) or {}).get("raw_text", "")
+        header = "\n".join([line.strip() for line in raw.splitlines()[:40] if line.strip()])
+        if cn and header:
+            out.append((cn, header[:1800]))
+    return out[:k]
+
+
+def _get_contexts(question: str, case_number: Optional[str] = None) -> List[Tuple[str, str]]:
     seen, out = set(), []
-    for cn, txt in (_vector_retrieve(question, k=4) + _lexical_retrieve(question, k=5)):
+    for cn, txt in (
+        _header_retrieve(question, k=2, case_number=case_number)
+        + _vector_retrieve(question, k=4, case_number=case_number)
+        + _lexical_retrieve(question, k=5, case_number=case_number)
+    ):
         if cn not in seen:
             seen.add(cn)
             out.append((cn, txt))
@@ -319,13 +446,17 @@ def _find_relevant_sentences(question: str, text: str, min_overlap: int = 2) -> 
     ][:5]
 
 
-def _answer_rag_content(question: str, case_number: Optional[str] = None) -> dict:
+def _answer_rag_content(
+    question: str,
+    case_number: Optional[str] = None,
+    chat_history: List[dict] = None,
+) -> dict:
     """
     Answer from document chunks ONLY.
     Never prints metadata block automatically.
     If nothing relevant found → "The judgment does not discuss this information."
     """
-    contexts = _get_contexts(question)
+    contexts = _get_contexts(question, case_number=case_number)
     case_ids = [cn for cn, _ in contexts]
 
     if not contexts:
@@ -338,6 +469,14 @@ def _answer_rag_content(question: str, case_number: Optional[str] = None) -> dic
             "mode": "rag_content",
         }
 
+    llm_context = "\n\n".join([f"[Case {cn}]\n{txt}" for cn, txt in contexts])
+    llm_result = smart_chatbot(question, llm_context, chat_history=chat_history)
+    llm_answer = None
+    if llm_result:
+        llm_answer = llm_result[0] if isinstance(llm_result, tuple) else llm_result
+    if llm_answer and not _is_weak_answer(llm_answer):
+        return {"answer": llm_answer, "retrieved_case_ids": case_ids, "mode": "rag_content"}
+
     all_relevant = []
     for cn, chunk_text in contexts:
         for s in _find_relevant_sentences(question, chunk_text):
@@ -346,6 +485,14 @@ def _answer_rag_content(question: str, case_number: Optional[str] = None) -> dic
     if all_relevant:
         answer = "Based on the uploaded document:\n" + "\n".join(all_relevant[:6])
     else:
+        # If RAG is weak and question has legal-knowledge intent, use legal route fallback.
+        if _classify_intent(question) in ("legal_knowledge", "hybrid"):
+            law_fallback = _answer_legal_knowledge(question, chat_history=chat_history)
+            return {
+                "answer": law_fallback["answer"],
+                "retrieved_case_ids": [],
+                "mode": "legal_knowledge",
+            }
         answer = "The judgment does not discuss this information."
 
     return {"answer": answer, "retrieved_case_ids": case_ids, "mode": "rag_content"}
@@ -470,8 +617,41 @@ def _answer_legal_question(question: str) -> Optional[str]:
     return best_answer if best_score >= 1.0 else None
 
 
-def _answer_legal_knowledge(question: str) -> dict:
+def _answer_general_with_models(question: str, chat_history: List[dict] = None) -> Optional[str]:
+    prompt = _build_general_legal_prompt(question, chat_history=chat_history)
+    candidates: List[Tuple[float, str]] = []
+
+    if ollama_is_configured():
+        try:
+            answer = (ollama_generate(prompt) or "").strip()
+            if answer:
+                candidates.append((_score_answer_quality(answer, prompt), answer))
+        except Exception as e:
+            logger.warning("[general_with_models] Ollama failed: %s", e)
+
+    if groq_is_configured():
+        try:
+            answer = (groq_generate(prompt) or "").strip()
+            if answer:
+                candidates.append((_score_answer_quality(answer, prompt), answer))
+        except Exception as e:
+            logger.warning("[general_with_models] Groq failed: %s", e)
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+def _answer_legal_knowledge(question: str, chat_history: List[dict] = None) -> dict:
     """Answer general Indian law question. Never says 'not found in document'."""
+    model_answer = _answer_general_with_models(question, chat_history=chat_history)
+    if model_answer and not _is_weak_answer(model_answer):
+        return {
+            "answer": f"⚖️ **Legal Knowledge**\n\n{model_answer}",
+            "retrieved_case_ids": [],
+            "mode": "legal_knowledge",
+        }
+
     explanation = _answer_legal_question(question)
     if explanation:
         return {
@@ -497,10 +677,14 @@ def _answer_legal_knowledge(question: str) -> dict:
 # 7. ROUTE D — HYBRID ANSWER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _answer_hybrid(question: str, case_number: Optional[str] = None) -> dict:
+def _answer_hybrid(
+    question: str,
+    case_number: Optional[str] = None,
+    chat_history: List[dict] = None,
+) -> dict:
     """Explain the law, then apply it to the uploaded case."""
-    law_result  = _answer_legal_knowledge(question)
-    case_result = _answer_rag_content(question, case_number)
+    law_result = _answer_legal_knowledge(question, chat_history=chat_history)
+    case_result = _answer_rag_content(question, case_number, chat_history=chat_history)
 
     law_part  = law_result["answer"]
     case_part = case_result["answer"]
@@ -517,7 +701,12 @@ def _answer_hybrid(question: str, case_number: Optional[str] = None) -> dict:
 # 8. PUBLIC ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def generate_answer(question: str, case_number: Optional[str] = None) -> dict:
+def generate_answer(
+    question: str,
+    case_number: Optional[str] = None,
+    response_mode: str = "auto",
+    chat_history: List[dict] = None,
+) -> dict:
     """
     Main chatbot entry point. Routes question to correct handler.
 
@@ -549,15 +738,25 @@ def generate_answer(question: str, case_number: Optional[str] = None) -> dict:
             "mode": "none",
         }
 
+    mode = (response_mode or "auto").strip().lower()
+    if mode in ("hybrid", "hybrid_always", "mixed"):
+        return _answer_hybrid(question, case_number, chat_history=chat_history)
+    if mode in ("rag", "document", "document_rag"):
+        return _answer_rag_content(question, case_number, chat_history=chat_history)
+    if mode in ("general", "legal", "legal_knowledge"):
+        return _answer_legal_knowledge(question, chat_history=chat_history)
+    if mode in ("metadata",):
+        return _answer_metadata(question, case_number)
+
     intent = _classify_intent(question)
 
     if intent == "metadata":
         return _answer_metadata(question, case_number)
     elif intent == "rag_content":
-        return _answer_rag_content(question, case_number)
+        return _answer_rag_content(question, case_number, chat_history=chat_history)
     elif intent == "legal_knowledge":
-        return _answer_legal_knowledge(question)
+        return _answer_legal_knowledge(question, chat_history=chat_history)
     elif intent == "hybrid":
-        return _answer_hybrid(question, case_number)
+        return _answer_hybrid(question, case_number, chat_history=chat_history)
     else:
         return _answer_metadata(question, case_number)

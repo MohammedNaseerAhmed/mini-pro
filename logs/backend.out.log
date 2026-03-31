@@ -1,0 +1,199 @@
+
+> mini-pro@1.0.0 backend:dev
+> powershell -ExecutionPolicy Bypass -File scripts/run-backend.ps1
+
+   MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 16 chunks from MongoDB.
+MongoDB connection closed
+ MongoDB Atlas connected
+[startup] Vector store loaded 17 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 17 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 18 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 18 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 20 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 20 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 21 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+d
+MongoDB Atlas connected
+[startup] Vector store loaded 16 chunks from MongoDB.
+INFO:     127.0.0.1:50502 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54281 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53110 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50189 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+[upload] ERROR: 'charmap' codec can't encode character '\u2192' in position 21: character maps to <undefined>
+INFO:     127.0.0.1:62762 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59592 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51270 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51270 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59592 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59592 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51270 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+[upload] ERROR: 'charmap' codec can't encode character '\u2192' in position 21: character maps to <undefined>
+INFO:     127.0.0.1:61987 - "POST /cases/upload-case HTTP/1.1" 200 OK
+[upload] ERROR: 'charmap' codec can't encode character '\u2192' in position 21: character maps to <undefined>
+INFO:     127.0.0.1:61717 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65489 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64883 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53896 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53896 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+ MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 16 chunks from MongoDB.
+INFO:     127.0.0.1:63856 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50912 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+[upload] Saving file -> uploads\CASE-20260331171024-048B76_dccbf803e96d76d9ed13ddb5d836b86ce0d7d9d60fa1ac9d20b709cd6280c4431774962078.pdf
+[upload] Running OCR...
+[upload] OCR done - 2417 chars
+[upload] Extracting metadata...
+[audit] insert failed: 1146 (42S02): Table 'legal_ai.case_audit_logs' doesn't exist
+[upload] MongoDB inserted -> 69cc000589039a9907974986
+[upload] Validating metadata for SQL...
+[upload] SQL insert REJECTED - court_level is missing (court line must contain COURT/TRIBUNAL/BENCH)
+[upload] SQL insert skipped (error or duplicate)
+[upload] Enqueued pipeline worker
+INFO:     127.0.0.1:60972 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56335 - "GET /ai/summarize/WPA%204857%20of%202026 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /chatbot/ask?q=who%20filed%20case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62018 - "GET /chatbot/ask?q=which%20acts%20are%20involved HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64414 - "GET /chatbot/ask?q=judge%20name HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50948 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59323 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+ MongoDB connection closed
+ MongoDB Atlas connected
+[startup] Vector store loaded 17 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 17 chunks from MongoDB.
+[upload] Saving file -> uploads\CASE-20260331172545-EAABCA_ba38ee08b225f2b96156159f594ebbf144db9ec6438dc72d6126788facc6d8211774962161.pdf
+[upload] Running OCR...
+[upload] OCR done - 6404 chars
+[upload] Extracting metadata...
+[audit] insert failed: 1146 (42S02): Table 'legal_ai.case_audit_logs' doesn't exist
+[upload] MongoDB inserted -> 69cc039c3ad417a7c948fc73
+[upload] Validating metadata for SQL...
+[upload] Inserting SQL metadata...
+[upload] SQL insert error: Not enough parameters for the SQL statement
+[upload] SQL insert skipped (error or duplicate)
+[upload] Enqueued pipeline worker
+INFO:     127.0.0.1:50823 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52659 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50938 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65040 - "GET /ai/summarize/WP%2025%20of%202026 HTTP/1.1" 200 OK
+ MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 18 chunks from MongoDB.
+INFO:     127.0.0.1:51142 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51142 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 18 chunks from MongoDB.
+[upload] Saving file -> uploads\CASE-20260331174116-DCE065_5b431c145b17c25aa08ce289ce8788b7673b02e5d7c042344eeb6b15232e155c1774978851.pdf
+[upload] Running OCR...
+[upload] OCR done - 907 chars
+[upload] Extracting metadata...
+[audit] insert failed: 1146 (42S02): Table 'legal_ai.case_audit_logs' doesn't exist
+[upload] MongoDB inserted -> 69cc07400447c92d1ae12cf4
+[upload] Validating metadata for SQL...
+[upload] Inserting SQL metadata...
+[upload] SQL insert error: Not enough parameters for the SQL statement
+[upload] SQL insert skipped (error or duplicate)
+[upload] Enqueued pipeline worker
+INFO:     127.0.0.1:61354 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49693 - "GET /ai/summarize/Civil%20Writ%20Jurisdiction%20Case%20No.%2014181%20of%202010 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57828 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+ INFO:     127.0.0.1:61666 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+MongoDB connection closed
+ MongoDB Atlas connected
+[startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 19 chunks from MongoDB.
+MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 19 chunks from MongoDB.
+INFO:     127.0.0.1:61100 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59725 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+[upload] Saving file -> uploads\CASE-20260331175532-684120_e179a1c409349cb0bd4f767c3cb5237e125b44383ef3238053536c71d0f411611774979709.pdf
+[upload] Running OCR...
+[upload] OCR done - 3467 chars
+[upload] Extracting metadata...
+[audit] insert failed: 1146 (42S02): Table 'legal_ai.case_audit_logs' doesn't exist
+[upload] MongoDB inserted -> 69cc0a9942b09ca643cefb8a
+[upload] Validating metadata for SQL...
+[upload] Inserting SQL metadata...
+[upload] SQL insert error: Not enough parameters for the SQL statement
+[upload] SQL insert skipped (error or duplicate)
+[upload] Enqueued pipeline worker
+INFO:     127.0.0.1:51428 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53709 - "GET /chatbot/ask?q=what%20are%20the%20acts%20involved HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50445 - "GET /chatbot/ask?q=petionor%20name HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50445 - "GET /ai/summarize/R/SPECIAL%20CIVIL%20APPLICATION%20NO.%204130%20of%202026 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62293 - "GET /chatbot/ask?q=sections%20mentioned HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63686 - "GET /chatbot/ask?q=explain%20ipc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57586 - "GET /chatbot/ask?q=10%20section%20in%20ipc HTTP/1.1" 200 OK
+ MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 20 chunks from MongoDB.
+INFO:     127.0.0.1:50353 - "GET /search/R/SPECIAL%20CIVIL%20APPLICATION%20NO.%204130%20of%202026 HTTP/1.1" 200 OK
+MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 20 chunks from MongoDB.
+INFO:     127.0.0.1:55349 - "GET /chatbot/ask?q=what%20is%20bail&language=hi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54072 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64754 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52048 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52873 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+[upload] Saving file -> uploads\CASE-20260331181708-CF6596_fb902d5ca831f14fc7a7440d79b395b52d49836967fd0d4b0ee87a159ebd5ca81774981001.pdf
+[upload] Running OCR...
+[upload] OCR done - 922 chars
+[upload] Extracting metadata...
+[audit] insert failed: 1146 (42S02): Table 'legal_ai.case_audit_logs' doesn't exist
+[upload] MongoDB inserted -> 69cc0fa8110004ea44d24308
+[upload] Validating metadata for SQL...
+[upload] Inserting SQL metadata...
+[upload] SQL insert error: Not enough parameters for the SQL statement
+[upload] SQL insert skipped (error or duplicate)
+[upload] Enqueued pipeline worker
+INFO:     127.0.0.1:54038 - "POST /cases/upload-case HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62023 - "GET /chatbot/ask?q=who+filed&case_number=2025%3AHHC%3A29304&language=hi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59461 - "GET /chatbot/ask?q=kya+bola+hai+is+doctument+mea&case_number=2025%3AHHC%3A29304&language=hi HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59490 - "GET /chatbot/ask?q=explain+10+ipc+sections&case_number=2025%3AHHC%3A29304&language=hi HTTP/1.1" 200 OK
+ MongoDB connection closed
+MongoDB Atlas connected
+ [startup] Vector store loaded 21 chunks from MongoDB.
+INFO:     127.0.0.1:65292 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+MongoDB connection closed
+MongoDB Atlas connected
+[startup] Vector store loaded 21 chunks from MongoDB.
+INFO:     127.0.0.1:51361 - "GET /dashboard/cases?limit=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55257 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55257 - "GET /openapi.json HTTP/1.1" 200 OK

@@ -16,9 +16,28 @@ from bson import ObjectId
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
+def _key_points_to_lines(key_points):
+    lines = []
+    for point in key_points or []:
+        if isinstance(point, dict):
+            label = str(point.get("label", "")).strip()
+            explanation = str(point.get("explanation", "")).strip()
+            if label and explanation:
+                lines.append(f"{label}: {explanation}")
+            elif explanation:
+                lines.append(explanation)
+            elif label:
+                lines.append(label)
+        elif point is not None:
+            text = str(point).strip()
+            if text:
+                lines.append(text)
+    return lines
+
+
 # ─── /summarize/{case_number} ────────────────────────────────────────────────
 @router.get("/summarize/{case_number:path}")
-def summarize_case(case_number: str):
+def summarize_case(case_number: str, languages: str = "en"):
     db = get_db()
     case = db["raw_judgments"].find_one({"case_number": case_number})
     if not case:
@@ -31,14 +50,58 @@ def summarize_case(case_number: str):
     # Merge basic into structured result
     structured["basic_summary"] = basic
 
+    # Optional multilingual summary output directly from summarize endpoint.
+    requested_langs = []
+    for lang in (languages or "en").split(","):
+        code = (lang or "").strip().lower()
+        if code and code not in requested_langs:
+            requested_langs.append(code)
+    if not requested_langs:
+        requested_langs = ["en"]
+
+    meta = case.get("case_metadata") or {}
+    extra_protect = []
+    for field in ("petitioner", "respondent", "judge_names", "court_name"):
+        val = meta.get(field)
+        if isinstance(val, str) and val.strip():
+            extra_protect.extend([x.strip() for x in val.split(",") if x.strip()])
+
+    key_lines = _key_points_to_lines(structured.get("key_points", []))
+    translation_source = f"{basic}\n\nKey Points:\n" + "\n".join(
+        [f"{i+1}. {p}" for i, p in enumerate(key_lines)]
+    )
+    translation_map = translate_text(
+        translation_source,
+        target_languages=requested_langs,
+        source_language="en",
+        extra_protect=extra_protect or None,
+    )
+
+    multilingual_summary = {}
+    for lang_code in requested_langs:
+        if lang_code == "en":
+            multilingual_summary["en"] = {
+                "language": "en",
+                "language_name": LANGUAGE_NAMES.get("en", "English"),
+                "translated_text": translation_source,
+                "model_used": "passthrough",
+                "error": None,
+            }
+            continue
+        selected = translation_map.get(lang_code)
+        if selected:
+            multilingual_summary[lang_code] = {
+                "language": selected.get("language", lang_code),
+                "language_name": LANGUAGE_NAMES.get(lang_code, lang_code.upper()),
+                "translated_text": selected.get("translated_text", translation_source),
+                "model_used": selected.get("model_used", "unknown"),
+                "error": selected.get("error"),
+            }
+
     case_id     = str(case.get("_id"))
     case_id_mysql = case.get("case_id_mysql")
-    # key_points are now {label, explanation} dicts
-    kp = structured.get("key_points", [])
-    if kp and isinstance(kp[0], dict):
-        summary_str = "\n".join([f"- {p['label']}: {p['explanation']}" for p in kp])
-    else:
-        summary_str = "\n".join([f"- {p}" for p in kp])
+    kp = key_lines
+    summary_str = "\n".join([f"- {p}" for p in kp])
 
     db["case_summaries"].update_one(
         {"case_id": case_id},
@@ -71,7 +134,11 @@ def summarize_case(case_number: str):
             if cursor: cursor.close()
             if conn:   conn.close()
 
-    return {"case_number": case_number, "summary": structured}
+    return {
+        "case_number": case_number,
+        "summary": structured,
+        "summary_multilingual": multilingual_summary,
+    }
 
 
 # ─── /translate/{case_number} ────────────────────────────────────────────────
@@ -150,7 +217,8 @@ def translate_case(case_number: str, language: str = "hi", mode: str = "summary"
             basic      = make_basic_summary(text)
             kpoints    = structured.get("key_points", [])
 
-        key_str       = "\n".join([f"{i+1}. {p}" for i, p in enumerate(kpoints)])
+        key_lines     = _key_points_to_lines(kpoints)
+        key_str       = "\n".join([f"{i+1}. {p}" for i, p in enumerate(key_lines)])
         translate_src = f"{basic}\n\nKey Points:\n{key_str}".strip()
         src_label     = "summary"
 
@@ -254,7 +322,8 @@ def full_case_analysis(case_number: str, language: str = "en"):
     basic     = make_basic_summary(text)
     summaries["basic_summary"] = basic
 
-    translate_src = basic + "\n\nKey Points:\n" + "\n".join(summaries.get("key_points", []))
+    key_lines = _key_points_to_lines(summaries.get("key_points", []))
+    translate_src = basic + "\n\nKey Points:\n" + "\n".join(key_lines)
     translation_map = translate_text(translate_src, [language])
     tsel  = translation_map.get(language, {"translated_text": translate_src, "model_used": "fallback"})
     similar = find_similar_cases(case_number, top_k=5)

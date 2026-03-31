@@ -14,6 +14,7 @@ from backend.ai.translator import translate_text
 from backend.ai.vector_store import vector_store
 from backend.database.mongo import get_db
 from backend.database.mysql import get_mysql_connection
+from backend.utils.case_extractor import validate_metadata_for_sql
 
 MAX_RETRIES = 3
 WORKER_POLL_SECONDS = 2
@@ -45,6 +46,25 @@ def _v(val):
         return None
     s = str(val).strip()
     return None if (not s or s.lower() == "unknown") else s
+
+
+def _key_points_to_lines(key_points: List[Any]) -> List[str]:
+    lines: List[str] = []
+    for point in key_points or []:
+        if isinstance(point, dict):
+            label = str(point.get("label", "")).strip()
+            explanation = str(point.get("explanation", "")).strip()
+            if label and explanation:
+                lines.append(f"{label}: {explanation}")
+            elif explanation:
+                lines.append(explanation)
+            elif label:
+                lines.append(label)
+        elif point is not None:
+            text = str(point).strip()
+            if text:
+                lines.append(text)
+    return lines
 
 
 def _chunk_text(text: str, chunk_size: int = 180, overlap: int = 40) -> List[str]:
@@ -135,13 +155,17 @@ def _upsert_case_mysql(case_number: str, title: str, clean_text: str, meta: Opti
         _mysql_execute(
             """
             INSERT INTO cases (
-                case_number, title, court_name, court_level, bench,
+                case_number, case_prefix, case_number_numeric, case_year,
+                title, court_name, court_level, bench,
                 case_type, filing_date, registration_date, decision_date,
                 petitioner, respondent, judge_names, advocates,
                 disposition, citation, source
             )
-            VALUES (%s, %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s)
+            VALUES (%s, %s, %s, %s,  %s, %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s, %s,  %s, %s, %s)
             ON DUPLICATE KEY UPDATE
+                case_prefix        = COALESCE(VALUES(case_prefix),        case_prefix),
+                case_number_numeric= COALESCE(VALUES(case_number_numeric),case_number_numeric),
+                case_year          = COALESCE(VALUES(case_year),          case_year),
                 title             = VALUES(title),
                 court_name        = COALESCE(VALUES(court_name),       court_name),
                 court_level       = COALESCE(VALUES(court_level),       court_level),
@@ -159,6 +183,9 @@ def _upsert_case_mysql(case_number: str, title: str, clean_text: str, meta: Opti
             """,
             (
                 case_number,
+                _v(meta.get("case_prefix")),
+                _v(meta.get("case_number_numeric")),
+                _v(meta.get("case_year")),
                 canonical_title,
                 _v(meta.get("court_name")),
                 _v(meta.get("court_level")),
@@ -291,7 +318,17 @@ def _process_stage(job: Dict[str, Any]) -> str:
         if stored_meta.get("title"):
             title = stored_meta["title"]
 
-        case_id_mysql = _upsert_case_mysql(case_number, title, normalized, meta=stored_meta)
+        sql_write_allowed = bool(stored_meta.get("sql_write_allowed"))
+        meta_valid, _meta_reason = validate_metadata_for_sql(stored_meta)
+        if sql_write_allowed and meta_valid:
+            case_id_mysql = _upsert_case_mysql(case_number, title, normalized, meta=stored_meta)
+        else:
+            case_id_mysql = None
+            _log_system(
+                "pipeline",
+                "sql_case_upsert_skipped_quality_gate",
+                f"{case_number} blocked by quality gate or validation",
+            )
 
         db["raw_judgments"].update_one(
             {"_id": case_id},
@@ -319,7 +356,8 @@ def _process_stage(job: Dict[str, Any]) -> str:
         facts = _extract_facts(clean_text)
         structured_summary = summarize_structured(clean_text)
         basic_summary = make_basic_summary(clean_text)           # ← NEW: plain-English 6-sentence summary
-        summary = "\n".join([f"- {p}" for p in structured_summary.get("key_points", [])])
+        key_lines = _key_points_to_lines(structured_summary.get("key_points", []))
+        summary = "\n".join([f"- {p}" for p in key_lines])
 
         db["case_facts"].update_one(
             {"case_id": case_id},
@@ -379,7 +417,8 @@ def _process_stage(job: Dict[str, Any]) -> str:
             basic   = make_basic_summary(clean_text)
             kpoints = structured_summary.get("key_points", [])
 
-        key_str       = "\n".join([f"{i+1}. {p}" for i, p in enumerate(kpoints)])
+        key_lines     = _key_points_to_lines(kpoints)
+        key_str       = "\n".join([f"{i+1}. {p}" for i, p in enumerate(key_lines)])
         translate_src = f"{basic}\n\nKey Points:\n{key_str}".strip() or \
                         (clean_text or _clean_text(raw_text))[:3000]  # final fallback
 
@@ -426,20 +465,34 @@ def _process_stage(job: Dict[str, Any]) -> str:
     if stage == "translated":
         clean_text = clean_text or _clean_text(raw_text)
         chunks = _chunk_text(clean_text)
+        header_lines = [line.strip() for line in (raw_text or "").splitlines()[:40] if line.strip()]
+        header_text = "\n".join(header_lines)[:1800]
         db["case_chunks"].delete_many({"case_id": case_id})
-        if chunks:
-            db["case_chunks"].insert_many(
-                [
-                    {
-                        "case_id": case_id,
-                        "case_number": case_number,
-                        "chunk_index": idx,
-                        "text": chunk,
-                        "created_at": _utcnow(),
-                    }
-                    for idx, chunk in enumerate(chunks)
-                ]
+        chunk_docs = []
+        if header_text:
+            chunk_docs.append(
+                {
+                    "case_id": case_id,
+                    "case_number": case_number,
+                    "chunk_index": -1,
+                    "chunk_type": "header",
+                    "text": header_text,
+                    "created_at": _utcnow(),
+                }
             )
+        for idx, chunk in enumerate(chunks):
+            chunk_docs.append(
+                {
+                    "case_id": case_id,
+                    "case_number": case_number,
+                    "chunk_index": idx,
+                    "chunk_type": "body",
+                    "text": chunk,
+                    "created_at": _utcnow(),
+                }
+            )
+        if chunk_docs:
+            db["case_chunks"].insert_many(chunk_docs)
         db["raw_judgments"].update_one(
             {"_id": case_id},
             {

@@ -17,6 +17,8 @@ Spec compliance:
 
 import re
 from typing import Dict, List, Optional, Tuple
+from backend.ai.groq_client import groq_generate, groq_is_configured
+from backend.ai.ollama_client import ollama_generate, ollama_is_configured
 
 # ── deep-translator import (checked once at module load) ─────────────────────
 try:
@@ -259,6 +261,65 @@ def _google_translate(text: str, lang_code: str) -> Tuple[str, Optional[str]]:
         return text, f"Translation failed: {exc}"
 
 
+def _llm_translate_prompt(text: str, language_code: str) -> str:
+    language_name = LANGUAGE_NAMES.get(language_code, language_code)
+    return (
+        f"Translate the following text to {language_name}.\n"
+        "STRICT RULES:\n"
+        "- Return only translated text, no extra commentary.\n"
+        "- Keep placeholders like __LAW0__, __LAW1__ exactly unchanged.\n"
+        "- Do not remove, reorder, or modify placeholder tokens.\n"
+        "- Preserve numbering and bullet structure.\n\n"
+        "TEXT:\n"
+        f"{text}"
+    )
+
+
+def _placeholder_preservation_score(source: str, translated: str) -> float:
+    ph_re = re.compile(r"__LAW\d+__")
+    src = ph_re.findall(source or "")
+    if not src:
+        return 1.0 if translated else 0.0
+    out = ph_re.findall(translated or "")
+    kept = sum(1 for token in src if token in out)
+    return kept / max(1, len(src))
+
+
+def _llm_translate(text: str, lang_code: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """
+    Returns (translated_text, error, model_used).
+    """
+    prompt = _llm_translate_prompt(text, lang_code)
+    candidates: List[Tuple[float, str, str]] = []
+
+    if ollama_is_configured():
+        try:
+            out = (ollama_generate(prompt) or "").strip()
+            if out:
+                score = _placeholder_preservation_score(text, out)
+                candidates.append((score, out, "ollama"))
+        except Exception:
+            pass
+
+    if groq_is_configured():
+        try:
+            out = (groq_generate(prompt) or "").strip()
+            if out:
+                score = _placeholder_preservation_score(text, out)
+                candidates.append((score, out, "groq"))
+        except Exception:
+            pass
+
+    if not candidates:
+        return text, "LLM translation unavailable", None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_score, best_text, best_model = candidates[0]
+    if best_score < 0.95:
+        return text, "LLM translation failed placeholder-preservation check", None
+    return best_text, None, best_model
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -332,26 +393,34 @@ def translate_text(
                 }
 
             elif lang in _DEEP_LANG:
-                raw_translated, error = _google_translate(protected_text, lang)
-                restored = _restore(raw_translated, protected_map)
-
-                if error:
-                    # Fallback: return English text, never empty
+                llm_text, llm_error, llm_model = _llm_translate(protected_text, lang)
+                if not llm_error:
                     outputs[lang] = {
                         "language":        lang,
-                        "translated_text": text,   # original English
+                        "translated_text": _restore(llm_text, protected_map),
                         "source_language": source_language,
-                        "model_used":      "english-fallback",
-                        "error":           error,
-                    }
-                else:
-                    outputs[lang] = {
-                        "language":        lang,
-                        "translated_text": restored,
-                        "source_language": source_language,
-                        "model_used":      "google-translate",
+                        "model_used":      llm_model,
                         "error":           None,
                     }
+                else:
+                    raw_translated, error = _google_translate(protected_text, lang)
+                    restored = _restore(raw_translated, protected_map)
+                    if error:
+                        outputs[lang] = {
+                            "language":        lang,
+                            "translated_text": text,   # original English
+                            "source_language": source_language,
+                            "model_used":      "english-fallback",
+                            "error":           f"{llm_error}; {error}",
+                        }
+                    else:
+                        outputs[lang] = {
+                            "language":        lang,
+                            "translated_text": restored,
+                            "source_language": source_language,
+                            "model_used":      "google-translate",
+                            "error":           None,
+                        }
 
             else:
                 outputs[lang] = {

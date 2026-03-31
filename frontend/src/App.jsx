@@ -469,7 +469,7 @@ function UploadPage() {
 
       <div className="section-sep">Case History</div>
       <RecentCasesPanel api={api} />
-      <Chatbot api={api} />
+      <Chatbot api={api} caseNumber={caseNumber} language={language} setLanguage={setLanguage} />
     </div>
   );
 }
