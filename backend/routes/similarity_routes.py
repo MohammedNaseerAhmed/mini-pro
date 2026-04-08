@@ -1,4 +1,5 @@
 import re
+import logging
 from typing import List, Set
 
 from fastapi import APIRouter
@@ -8,6 +9,7 @@ from backend.database.mongo import get_db
 from backend.database.mysql import get_mysql_connection
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _extract_keywords(case_doc) -> Set[str]:
@@ -116,28 +118,31 @@ def search_similar(case_number: str):
         top = result["similar_cases"]
         result_case_numbers = [x["case_number"] for x in top]
 
-        mysql = get_mysql_connection()
-        cursor = mysql.cursor()
-        cursor.execute("SELECT case_id FROM cases WHERE case_number=%s", (case_number,))
-        row = cursor.fetchone()
-        if row:
-            source_case_id = row[0]
-            cursor.execute("DELETE FROM similar_cases WHERE case_id=%s", (source_case_id,))
-            for item in top:
-                cn = item["case_number"]
-                score = item["similarity_score"]
-                cursor.execute("SELECT case_id FROM cases WHERE case_number=%s", (cn,))
-                target = cursor.fetchone()
-                if not target:
-                    continue
-                cursor.execute(
-                    """
-                    INSERT INTO similar_cases (case_id, similar_case_id, similarity_score)
-                    VALUES (%s, %s, %s)
-                    """,
-                    (source_case_id, target[0], float(score)),
-                )
-            mysql.commit()
+        try:
+            mysql = get_mysql_connection()
+            cursor = mysql.cursor()
+            cursor.execute("SELECT case_id FROM cases WHERE case_number=%s", (case_number,))
+            row = cursor.fetchone()
+            if row:
+                source_case_id = row[0]
+                cursor.execute("DELETE FROM similar_cases WHERE case_id=%s", (source_case_id,))
+                for item in top:
+                    cn = item["case_number"]
+                    score = item["similarity_score"]
+                    cursor.execute("SELECT case_id FROM cases WHERE case_number=%s", (cn,))
+                    target = cursor.fetchone()
+                    if not target:
+                        continue
+                    cursor.execute(
+                        """
+                        INSERT INTO similar_cases (case_id, similar_case_id, similarity_score)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (source_case_id, target[0], float(score)),
+                    )
+                mysql.commit()
+        except Exception as exc:
+            logger.warning("Skipping similar_cases SQL sync for %s: %s", case_number, exc)
 
         result["similar_case_numbers"] = result_case_numbers
         return result

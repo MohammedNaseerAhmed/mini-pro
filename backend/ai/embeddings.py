@@ -1,12 +1,19 @@
 import hashlib
+import logging
+import os
 from typing import List, Optional
 
 _model = None
 _load_error: Optional[str] = None
+logger = logging.getLogger(__name__)
 
 # all-MiniLM-L6-v2 has a 512 WordPiece token limit.
 # 400 words is a safe proxy to stay under that limit.
 _MAX_WORDS = 400
+
+# Keep model loading and inference quiet in uvicorn/Windows environments.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 
 def _truncate(text: str) -> str:
@@ -25,10 +32,19 @@ def _load_model_once() -> bool:
         return False
     try:
         from sentence_transformers import SentenceTransformer
+        try:
+            from transformers.utils import logging as transformers_logging
+            transformers_logging.set_verbosity_error()
+            disable_progress = getattr(transformers_logging, "disable_progress_bar", None)
+            if callable(disable_progress):
+                disable_progress()
+        except Exception:
+            pass
         _model = SentenceTransformer("all-MiniLM-L6-v2")
         return True
     except Exception as exc:
         _load_error = str(exc)
+        logger.warning("Embedding model unavailable, using fallback embeddings: %s", exc)
         return False
 
 
@@ -49,5 +65,8 @@ def get_embedding(text: str):
         return None
     truncated = _truncate(text.strip())
     if _load_model_once():
-        return _model.encode(truncated)
+        try:
+            return _model.encode(truncated, show_progress_bar=False)
+        except Exception as exc:
+            logger.warning("Embedding encode failed, using fallback embedding: %s", exc)
     return _fallback_embedding(truncated)

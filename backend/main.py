@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(mes
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.database.mongo import connect_to_mongo, close_mongo_connection
+from backend.database.mongo import connect_to_mongo, close_mongo_connection, is_mongo_connected
 from backend.routes.raw_judgment_routes import router as raw_judgment_router
 from backend.routes.upload_routes import router as upload_router
 from backend.routes.ai_routes import router as ai_router
@@ -79,7 +79,11 @@ app.include_router(manual_prediction_router)
 # ---- startup ----
 @app.on_event("startup")
 def startup():
-    connect_to_mongo()
+    mongo_connected = connect_to_mongo()
+    if not mongo_connected:
+        print("[startup] MongoDB unavailable: worker startup and vector-store reload skipped.")
+        return
+
     pipeline_worker.start()
     # Re-load previously embedded cases into in-memory vector index so
     # similarity search works immediately without re-processing documents.
@@ -92,7 +96,8 @@ def startup():
 # ---- shutdown ----
 @app.on_event("shutdown")
 def shutdown():
-    pipeline_worker.stop()
+    if is_mongo_connected():
+        pipeline_worker.stop()
     close_mongo_connection()
 
 # ---- routes ----
