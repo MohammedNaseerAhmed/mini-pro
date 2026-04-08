@@ -1,3 +1,4 @@
+import logging
 import re
 import threading
 import time
@@ -5,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pymongo import ReturnDocument
+from pymongo.errors import PyMongoError
 
 from backend.ai.embeddings import get_embedding
 from backend.ai.predictor import predict_case_with_history
@@ -12,13 +14,15 @@ from backend.ai.summarizer import make_basic_summary, summarize_structured
 from backend.ai.text_pipeline import detect_language_code, normalize_text, split_paragraphs
 from backend.ai.translator import translate_text
 from backend.ai.vector_store import vector_store
-from backend.database.mongo import get_db
+from backend.database.mongo import connect_to_mongo, get_db
 from backend.database.mysql import get_mysql_connection
 from backend.utils.case_extractor import validate_metadata_for_sql
 
 MAX_RETRIES = 3
 WORKER_POLL_SECONDS = 2
+WORKER_DB_RETRY_SECONDS = 5
 WORKER_ID = "local-pipeline-worker"
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -711,8 +715,20 @@ class PipelineWorker:
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
-            processed = process_next_job()
-            if not processed:
+            try:
+                processed = process_next_job()
+                if not processed:
+                    time.sleep(WORKER_POLL_SECONDS)
+            except PyMongoError as exc:
+                logger.warning(
+                    "Pipeline worker lost MongoDB connectivity (%s). Retrying in %ss.",
+                    exc,
+                    WORKER_DB_RETRY_SECONDS,
+                )
+                connect_to_mongo()
+                time.sleep(WORKER_DB_RETRY_SECONDS)
+            except Exception as exc:
+                logger.exception("Pipeline worker loop error: %s", exc)
                 time.sleep(WORKER_POLL_SECONDS)
 
 

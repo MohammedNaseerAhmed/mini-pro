@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 
 export default function UploadZone({ onUploaded, api }) {
     const [dragOver, setDragOver] = useState(false);
@@ -6,7 +6,6 @@ export default function UploadZone({ onUploaded, api }) {
     const [uploading, setUploading] = useState(false);
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState("");
-    const inputRef = useRef(null);
 
     const handleFiles = (f) => {
         if (!f || !f.name.match(/\.(pdf|png|jpg|jpeg|tiff?)$/i)) {
@@ -54,12 +53,11 @@ export default function UploadZone({ onUploaded, api }) {
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
-                onClick={() => !uploading && inputRef.current?.click()}
             >
                 <input
-                    ref={inputRef}
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif"
+                    disabled={uploading}
                     onChange={(e) => handleFiles(e.target.files?.[0])}
                 />
                 <span className="upload-icon">📄</span>
