@@ -14,3 +14,10 @@ transformers
 torch
 deep-translator
 requests
+httpx
+nest_asyncio
+beautifulsoup4
+apscheduler
+bcrypt
+PyJWT
+email-validator

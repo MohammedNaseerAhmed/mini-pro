@@ -1,774 +1,642 @@
-﻿# Legal AI Insights Platform
+# ⚖️ LexAI — Legal Intelligence Platform
 
-AI-powered platform to upload legal documents and turn them into plain-language insights, translations, similarity matches, predictions, and chatbot answers.
-
----
-
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [Problem It Solves](#problem-it-solves)
-- [Key Features](#key-features)
-- [System Architecture](#system-architecture)
-- [End-to-End Processing Flow](#end-to-end-processing-flow)
-- [AI Capabilities](#ai-capabilities)
-- [Related Research Papers](#related-research-papers)
-- [Useful Datasets and Resources](#useful-datasets-and-resources)
-- [Why This Project Is Publishable](#why-this-project-is-publishable)
-- [Suggested Paper Outline](#suggested-paper-outline)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [API Reference](#api-reference)
-- [Data Storage Model](#data-storage-model)
-- [SQL Schema Reference (Brief)](#sql-schema-reference-brief)
-- [MongoDB Schema Reference (Brief)](#mongodb-schema-reference-brief)
-- [MongoDB Atlas Setup (Brief)](#mongodb-atlas-setup-brief)
-- [Installation and Setup](#installation-and-setup)
-- [Environment Variables](#environment-variables)
-- [How to Use](#how-to-use)
-- [Troubleshooting](#troubleshooting)
-- [Security Notes](#security-notes)
-- [Screenshots](#screenshots-placeholder)
-- [Future Enhancements](#future-enhancements)
-- [Contribution Guidelines](#contribution-guidelines)
-- [License](#license)
-- [Author](#author)
+> **Enterprise-grade AI platform for Indian legal professionals.** Upload documents, get AI summaries, map IPC→BNS sections, predict outcomes, check ADR eligibility, and sync live eCourts data — all in one dark-luxury interface.
 
 ---
 
-## Project Overview
+## 📋 Table of Contents
 
-**Legal AI Insights Platform** is a full-stack legal-tech application built to simplify complex legal documents.
-
-Users can upload scanned or digital court documents (PDF/image), and the platform performs OCR, extracts metadata, generates summaries, translates output, retrieves similar cases, predicts outcomes, and supports legal Q&A through a chatbot.
-
-The platform combines:
-
-- FastAPI APIs for core processing
-- MongoDB + MySQL dual-storage architecture
-- NLP and embedding-based retrieval
-- Optional LLM integrations (Groq/Ollama)
-- React + Vite frontend for an interactive user experience
-
----
-
-## Problem It Solves
-
-Legal documents are difficult for most users because they are:
-
-- Long and technical
-- Filled with legal jargon
-- Often scanned and not machine-readable
-- Hard to search, compare, and understand quickly
-
-This project reduces that friction by automating legal document understanding and presenting insights in plain language and multiple languages.
+1. [Project Overview](#-project-overview)
+2. [Tech Stack](#-tech-stack)
+3. [Architecture](#-architecture)
+4. [Features](#-features)
+5. [Database Schema](#-database-schema)
+6. [API Reference](#-api-reference)
+7. [Frontend Components](#-frontend-components)
+8. [Environment Setup](#-environment-setup)
+9. [Installation & Running](#-installation--running)
+10. [Project Structure](#-project-structure)
+11. [Design System](#-design-system)
+12. [How It Was Built](#-how-it-was-built)
 
 ---
 
-## Key Features
+## 🧠 Project Overview
 
-- 📄 **Upload Legal Documents**: PDF, PNG, JPG, JPEG, TIFF, TIF
-- 🔍 **OCR + Text Extraction**: Extract text from scanned and digital files
-- 🧹 **Text Normalization Pipeline**: Clean noisy OCR output for downstream AI tasks
-- 🧾 **Case Metadata Extraction**: Rule-based extraction + AI fallback + quality gate
-- 🧠 **AI Summarization**:
-  - `basic_summary` (simple, concise)
-  - `short_summary`
-  - `detailed_summary`
-  - `key_points`
-- 🌐 **Multilingual Translation**: English, Hindi, Telugu (+ extended languages)
-- ⚖️ **Legal Section Detection**: Section/act detection and legal token-aware translation
-- 🔎 **Similar Case Retrieval**: Keyword overlap + semantic embedding hybrid scoring
-- 💬 **Hybrid Legal Chatbot**:
-  - Metadata mode
-  - RAG content mode
-  - Legal knowledge mode
-  - Hybrid mode
-- 📊 **Dashboard APIs**: Overview, metrics, recent activity, pipeline status, SQL health, audit logs
-- 🔁 **Background Processing Worker**: Multi-stage queue-driven processing
-- 🧮 **Prediction APIs**:
-  - Historical-text predictor
-  - Structured manual outcome prediction
-- 🧾 **Feedback Loop**: Store corrections for metadata-learning refinement
+**LexAI** is a full-stack Legal AI platform built for Indian advocates, paralegals, and legal researchers. It combines:
+
+- **Document Intelligence** — PDF/image upload with OCR, AI summarisation, multi-language translation
+- **BNS Citation Mapper** — Maps deprecated IPC/CrPC/IEA sections to modern BNS/BNSS/BSA (July 2024)
+- **ADR Suitability Engine** — NALSA-informed scoring to assess Lok Adalat / arbitration eligibility
+- **eCourts AI Assistant** — Guided NJDG portal navigation + CAPTCHA-based live case sync
+- **Win Probability Predictor** — Rule-based + ML case outcome prediction
+- **AI Legal Chatbot** — Multi-language counsel chatbot with case context
+- **DB Intelligence Layer** — Live analytics dashboard over 20 MySQL tables
 
 ---
 
-## System Architecture
-
-### High-Level Components
-
-1. **Frontend (React + Vite)**
-- Upload documents
-- Trigger summary/translation/similarity
-- Open manual prediction page
-- Chat with legal assistant
-- View recent cases and status
-
-2. **Backend API (FastAPI)**
-- Receives uploads and stores files
-- Runs OCR + metadata extraction
-- Exposes AI, chatbot, dashboard, and prediction endpoints
-- Starts background pipeline worker
-
-3. **AI Processing Layer (Python modules)**
-- OCR, text cleaning, summarization, translation
-- Embedding generation and vector search
-- Rule-based + optional LLM-based logic
-
-4. **Data Layer**
-- **MongoDB**: raw judgments, queue, AI outputs, chunks, embeddings metadata, summaries, translations, predictions
-- **MySQL**: normalized relational data, audit logs, feedback, chat history, similar cases
-
-### Request Flow Snapshot
-
-`Frontend -> FastAPI -> OCR/NLP/AI -> MongoDB/MySQL -> Frontend`
-
----
-
-## End-to-End Processing Flow
-
-### Upload Pipeline
-
-1. User uploads a file via `POST /cases/upload-case`.
-2. File is stored under `uploads/`.
-3. OCR runs and extracts text.
-4. Text is normalized and split into paragraphs.
-5. Metadata extraction runs:
-- Rule-based extraction
-- Optional Ollama/Groq fallback
-- Learning corrections from past feedback
-- Quality gate check for SQL write eligibility
-6. Case is stored in MongoDB (`raw_judgments`).
-7. Structured metadata is upserted to MySQL (`cases`) when quality checks pass.
-8. Case is enqueued in `processing_queue` for background pipeline execution.
-
-### Background Worker Stages
-
-Queue stage progression:
-
-`extracted -> cleaned -> summarized -> translated -> chunked -> embedded -> predicted -> completed`
-
-What each stage does:
-
-- `extracted`: clean text, detect language, split paragraphs, update case record
-- `cleaned`: generate facts and summaries
-- `summarized`: translate summary payload
-- `translated`: create text chunks for retrieval
-- `chunked`: create embeddings and vector index entries
-- `embedded`: generate prediction outputs
-- `predicted`: mark case complete
-
----
-
-## AI Capabilities
-
-### 1) Metadata Extraction
-
-- Rule-based case parser for case number, parties, court, dates, judges, advocates, disposition
-- Optional AI extraction via:
-- Ollama
-- Groq
-- Merge strategy + validation + confidence scoring
-- Quality gate to prevent poor metadata from entering SQL
-- Feedback-driven learning adjustments via `learning_feedback`
-
-### 2) Summarization
-
-- Section-aware summarizer with header-noise removal
-- Fact/argument/outcome signal detection
-- Key-point generation
-- Optional model-assisted refinement with quality checks
-
-### 3) Translation
-
-- Translation targets include Hindi (`hi`), Telugu (`te`), and more
-- Protects legal tokens and proper nouns using placeholders
-- Supports simple-English mode
-- Uses LLM translation when available, then fallback strategy
-
-### 4) Similarity Search
-
-- Hybrid scoring:
-- 65% keyword overlap (acts/sections/legal terms)
-- 35% semantic similarity (embeddings)
-- Stores similar-case links in MySQL
-
-### 5) Chatbot
-
-Four-route architecture:
-
-- `metadata`: answers from structured fields only
-- `rag_content`: answers from retrieved case text
-- `legal_knowledge`: answers general legal concepts
-- `hybrid`: combines legal explanation + case-specific application
-
-### 6) Prediction
-
-- Text-based predictor (`/prediction/{case_id}`) using baseline + historical similarity enhancement
-- Manual weighted predictor (`/predict/manual`) using structured legal factors
-
----
-
-## Related Research Papers
-
-- **Automatic Legal Judgment Summarization Using LLMs (JUST-NLP 2025)** - Abstractive legal summarization with LLM evaluation.
-- **Legal Document Summarization Using NLP & ML Techniques** - Extractive baselines with vectors/similarity.
-- **Improving Legal Judgment Prediction via Deep Learning** - Prediction pipelines linked with legal text understanding.
-- **Legal Judgment Prediction Systematic Review** - Survey of prediction methods and evaluation approaches.
-- **ValidEase: NLP Simplification & Summarization of Legal Texts** - Simplification-focused legal NLP framing.
-- **Indian Legal Judgment Summarization Using Pretrained Models** - T5/BART-style summarization direction.
-- **Legal NLP Survey (2024)** - Broad coverage of summarization, classification, retrieval, and prediction.
-
-Use these in the Related Work section of your paper and map each to your corresponding module (summarizer, predictor, chatbot, retrieval).
-
----
-
-## Useful Datasets and Resources
-
-### Suggested Datasets/Benchmarks
-
-- `LegalBench` - Legal reasoning benchmark tasks.
-- `IndicLegalQA` - Legal QA pairs (useful for chatbot evaluation).
-- `ILSI (Indian Legal Statute Identification)` - Legal section/statute identification.
-- `awesome-legal-nlp` dataset lists - Curated legal NLP datasets.
-- `Cambridge Law Corpus` - Large legal text corpus for benchmarking.
-
-### Public Legal Data Sources
-
-- Free Law Project
-- PlainSite
-- Awesome Legal Data (GitHub collections)
-
-### Research Portals
-
-- ACL Anthology
-- arXiv
-- ResearchGate
-- Springer
-- SAGE Journals
-
----
-
-## Why This Project Is Publishable
-
-- Integrates multiple legal AI tasks in one platform (summarization, retrieval, prediction, translation, chatbot).
-- Uses practical legal document workflows (upload -> OCR -> analytics -> user-facing insights).
-- Includes multilingual capability (important for Indian legal accessibility).
-- Uses modern retrieval architecture (embeddings + vector search + RAG-style answering).
-- Supports auditability and reproducibility via structured logs and versioned outputs.
-
----
-
-## Suggested Paper Outline
-
-1. Introduction and Motivation
-2. Related Work (summarization, prediction, legal QA, retrieval)
-3. Dataset and Data Pipeline (OCR, metadata, storage)
-4. Methodology (summary, translation, retrieval, prediction, chatbot)
-5. Evaluation (ROUGE/BLEU, prediction metrics, response quality)
-6. Results and Error Analysis
-7. Conclusion and Future Work
-
----
-
-## Tech Stack
-
-### Frontend
-
-- React 18
-- Vite 5
-- Plain CSS (custom styling; Tailwind is not currently used)
+## 🛠 Tech Stack
 
 ### Backend
+| Layer | Technology |
+|---|---|
+| API Framework | **FastAPI** (Python 3.11+) |
+| ASGI Server | **Uvicorn** |
+| Primary Database | **MySQL** (20 relational tables) |
+| Document Store | **MongoDB** (raw judgments, vectors) |
+| AI / LLM | **Groq API** (llama-3.3-70b-versatile) + **Ollama** (local llama3) |
+| Embeddings | **sentence-transformers** (all-MiniLM-L6-v2) |
+| Similarity Search | **scikit-learn** cosine similarity (in-memory vector store) |
+| PDF Extraction | **pdfplumber** |
+| OCR | **pytesseract** + **Pillow** |
+| Web Scraping | **requests** + **BeautifulSoup4** (eCourts portal) |
+| Translation | **deep-translator** (Google Translate API) |
+| Scheduler | **APScheduler** (eCourts background sync) |
+| Auth | **bcrypt** + **PyJWT** |
 
-- Python 3.11+
-- FastAPI
-- Uvicorn
-
-### Databases
-
-- MongoDB (document storage + processing state)
-- MySQL (relational entities, logs, audit, feedback)
-
-### AI/NLP/OCR Libraries
-
-- sentence-transformers (`all-MiniLM-L6-v2` embeddings)
-- transformers / torch
-- scikit-learn
-- pdfplumber
-- pytesseract
-- Pillow
-- deep-translator
-
-### Optional Model Providers
-
-- Ollama (local model serving)
-- Groq API
-- Hugging Face Hub (model download/caching for embeddings)
-
-### Tooling
-
-- npm scripts for orchestration
-- PowerShell scripts for setup and backend run
+### Frontend
+| Layer | Technology |
+|---|---|
+| Framework | **React 18** (Vite) |
+| Styling | **Tailwind CSS** + Vanilla CSS (custom design tokens) |
+| Fonts | Cormorant Garamond, DM Sans, IBM Plex Mono |
+| HTTP | Native `fetch` API |
+| Routing | Hash-based (`#/page`) — no React Router |
 
 ---
 
-## Project Structure
+## 🏗 Architecture
 
-```text
-mini-pro/
-├── backend/
-│   ├── ai/
-│   │   ├── embeddings.py
-│   │   ├── legal_chatbot.py
-│   │   ├── predictor.py
-│   │   ├── summarizer.py
-│   │   ├── translator.py
-│   │   └── vector_store.py
-│   ├── database/
-│   │   ├── mongo.py
-│   │   ├── mysql.py
-│   │   └── settings.py
-│   ├── models/
-│   ├── routes/
-│   │   ├── upload_routes.py
-│   │   ├── ai_routes.py
-│   │   ├── similarity_routes.py
-│   │   ├── chatbot_routes.py
-│   │   ├── prediction_routes.py
-│   │   ├── manual_prediction_routes.py
-│   │   ├── dashboard_routes.py
-│   │   └── feedback_routes.py
-│   ├── services/
-│   │   ├── metadata_pipeline.py
-│   │   ├── learning_engine.py
-│   │   └── pipeline_worker.py
-│   ├── utils/
-│   │   ├── ocr_processor.py
-│   │   └── case_extractor.py
-│   ├── scripts/
-│   │   └── init_legal_ai.sql
-│   ├── .env.example
-│   ├── requirements.txt
-│   └── main.py
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── styles.css
-│   │   └── components/
-│   ├── .env.example
-│   └── package.json
-├── scripts/
-│   ├── setup.ps1
-│   ├── install-backend.ps1
-│   └── run-backend.ps1
-├── uploads/
-└── README.md
+```
+┌─────────────────────────────────────────────────────────┐
+│                    REACT FRONTEND                        │
+│  Vite + TailwindCSS · Hash Router · Dark Luxury UI      │
+└───────────────┬─────────────────────────────────────────┘
+                │  REST API (JSON)
+                ▼
+┌─────────────────────────────────────────────────────────┐
+│                 FASTAPI BACKEND                          │
+│  15 Route modules · CORS middleware · Global exc handler│
+├────────────┬──────────────┬──────────────┬──────────────┤
+│  Pipeline  │  AI Services │  DB Intel    │  eCourts     │
+│  Worker    │  (Groq/LLM)  │  Layer       │  Scheduler   │
+└────────────┴──────┬───────┴──────┬───────┴──────────────┘
+                    │              │
+          ┌─────────▼──┐   ┌───────▼──────┐
+          │  MongoDB   │   │    MySQL      │
+          │ (vectors,  │   │ (20 tables,  │
+          │  raw text) │   │  all features)│
+          └────────────┘   └──────────────┘
+```
+
+### Data Flow — Document Upload
+```
+User uploads PDF/Image
+        ↓
+UploadZone.jsx  →  POST /upload
+        ↓
+pipeline_worker.py  (background thread)
+        ↓
+pdfplumber / pytesseract  →  raw text
+        ↓
+metadata_pipeline.py  →  extract case metadata
+        ↓
+section_mapper_service.py  →  detect IPC/BNS citations
+        ↓
+MongoDB  (raw text + embeddings)
+MySQL   (case_files, case_metadata, bns_mappings)
+        ↓
+vector_store.add()  →  in-memory cosine index
 ```
 
 ---
 
-## API Reference
+## ✨ Features
 
-### Upload & Case Features
+### 1. 📄 Document Intelligence (Workspace)
+- **Upload** PDF or image files (drag-and-drop or click)
+- **OCR fallback** — pytesseract for scanned documents
+- **Auto metadata extraction** — case number, parties, court, judge, year
+- **AI Summarisation** — Groq LLM generates plain-language case brief
+- **Key Legal Points** — structured bullet extraction
+- **Multi-Language Translation** — 7 Indian languages (Hindi, Telugu, Kannada, Tamil, Malayalam, Marathi + Simple English)
+- **Precedent Search** — cosine similarity against embedded case database
 
-- `POST /cases/upload-case` - Upload and ingest legal document
-- `GET /cases/features/{case_number}` - Feature availability for a case
-
-### AI
-
-- `GET /ai/summarize/{case_number}` - Generate/store summaries
-- `GET /ai/translate/{case_number}?language=<code>&mode=summary|raw` - Translate summary or full text
-- `GET /ai/case/{case_id}` - Fetch case details by Mongo `_id`
-- `GET /ai/analyze/{case_number}` - Combined analysis (summary/translation/similarity/prediction)
-
-### Similarity
-
-- `GET /search/{case_number}` - Retrieve top similar cases
-
-### Chatbot
-
-- `POST /chatbot/ask` - Ask chatbot with optional case context/history
-
-### Prediction
-
-- `GET /prediction/{case_id}` - Text-driven prediction
-- `POST /predict/manual` - Structured manual probability prediction
-
-### Dashboard
-
-- `GET /dashboard/overview`
-- `GET /dashboard/metrics`
-- `GET /dashboard/recent-activity`
-- `GET /dashboard/cases`
-- `GET /dashboard/pipeline/{case_number}`
-- `GET /dashboard/sql-health`
-- `GET /dashboard/audit/{case_id}`
-
-### Feedback
-
-- `POST /feedback` - Store correction feedback
-- `GET /feedback` - List recent feedback
-
-### Misc
-
-- `GET /` - Health message (`Legal AI Running`)
-- `POST /raw-judgments/insert` - Intentionally disabled (returns 400)
+**Endpoint:** `POST /upload` · `GET /ai/summarize/{case}` · `GET /ai/translate/{case}`
 
 ---
 
-## Data Storage Model
+### 2. 📖 BNS Section Mapper
+Implements the July 1, 2024 criminal law reform (IPC → BNS, CrPC → BNSS, IEA → BSA).
+
+#### Sub-features:
+| Feature | Description |
+|---|---|
+| **Section Lookup** | Search any IPC/CrPC/IEA section → get BNS/BNSS/BSA equivalent |
+| **FIR Analyzer** | Paste raw FIR/charge sheet text → AI extracts all citations and maps them |
+| **Draft Rewriter** | Paste legal petition → auto-replaces all deprecated sections inline |
+| **Change Types** | Retained · Modified · Merged · Replaced · Split |
+| **Era Detection** | Labels documents: Pre-2024 / Transitional / BNS-Compliant |
+
+**Endpoints:** `GET /bns/lookup` · `POST /bns/analyze-text` · `POST /bns/rewrite-draft`
+
+**Database:** `bns_section_mappings` table (80+ mappings from MHA gazette)
+
+---
+
+### 3. ⚖️ ADR Suitability Predictor
+Rule-based + AI scoring engine aligned with NALSA guidelines.
+
+#### Scoring Factors:
+- Case type (civil preferred over criminal)
+- Claim amount vs. Lok Adalat thresholds
+- Number of parties
+- Case age / pendency
+- Prior settlement attempts
+- Subject-matter keywords (family, property, motor accident, cheque dishonour)
+
+#### Output:
+- **Suitability score** (0–100%)
+- **ADR pathway** — Lok Adalat / Arbitration / Mediation / Conciliation
+- **Settlement range** estimate
+- **AI-drafted referral application** (ready to file)
+- **Case Lookup mode** — load stored ADR data for any case number
+- **Manual mode** — enter case details directly without uploading
+
+**Endpoints:** `GET /adr/assessment/{case}` · `POST /adr/manual-assess` · `POST /adr/generate-application`
+
+---
+
+### 4. 🏛️ eCourts Intelligence
+
+#### 4a. AI Guide (ECourtsAssistant)
+- Detects **search method** from free-text query (CNR / case number / party name / FIR / advocate / act+section)
+- Returns **step-by-step instructions** for the official eCourts portal
+- Shows **confidence level** and **portal URL**
+- Quick-pick example buttons for common query types
+
+#### 4b. Paste & Analyze
+- User copies text from eCourts result page → pastes here
+- System auto-extracts: **CNR**, parties, next hearing, legal sections
+- **BNS auto-mapping** of all extracted sections
+- **ADR eligibility hint**
+- Saves CNR to MySQL if case reference provided
+
+#### 4c. Live Sync (eCourtsStatus)
+- **CAPTCHA flow** — fetches live CAPTCHA from eCourts portal using `requests.Session`
+- Submit CNR + CAPTCHA → live case data from NJDG
+- **AI urgency scoring** on hearing dates (Critical / High / Medium / Low)
+- **Hearing history** tab
+- **AI Case Brief** tab
+- Background **APScheduler** refreshes synced cases every 6 hours
+
+**Endpoints:** `POST /ecourts/guide` · `POST /ecourts/analyze-pasted` · `GET /ecourts/captcha` · `POST /ecourts/live-search` · `GET /ecourts/status/{case}`
+
+---
+
+### 5. 🔮 Win Probability Predictor (Predict Page)
+- Input: case type, court level, evidence count, witness count, delay (years), legal representation
+- Rule-based scoring + normalised ML features
+- Outputs: **win %**, **risk level**, **key factors**, **recommendations**
+- Manual entry form with dark-luxury gold-input fields
+
+**Endpoint:** `POST /predict/manual`
+
+---
+
+### 6. 🤖 AI Legal Chatbot
+- Floating persistent chatbot on Workspace page
+- **Case-context aware** — uses uploaded case number for grounded answers
+- **Multi-language** — replies in 7 Indian languages + English
+- **Groq LLM** backend (llama-3.3-70b) with legal system prompt
+- Streaming-ready response architecture
+- Conversation history maintained in component state
+
+**Endpoint:** `POST /chatbot/ask`
+
+---
+
+### 7. 🧠 DB Intelligence Dashboard
+- **Live read-out** of all 20 MySQL tables
+- Row counts, index health, last-write timestamps
+- Feature routing map — shows which tables serve which features
+- Table search + filter
+- One-click **Refresh** with last-updated timestamp
+
+**Endpoint:** `GET /intelligence/overview` · `GET /intelligence/table/{name}`
+
+---
+
+### 8. 🔐 Authentication
+- **Register / Login** with email + password
+- Passwords hashed with **bcrypt**
+- **JWT** tokens (stored in component state, not localStorage for security)
+- Auth gate — entire app behind login wall
+- Dark-luxury AuthPage with animated gold gradient
+
+**Endpoints:** `POST /auth/register` · `POST /auth/login` · `GET /auth/me`
+
+---
+
+## 🗄 Database Schema
+
+### MySQL Tables (20 total)
+
+| Table | Purpose |
+|---|---|
+| `case_files` | Uploaded documents — filename, status, timestamps |
+| `case_metadata` | Extracted metadata — court, judge, parties, year |
+| `case_sections` | Legal sections cited per case |
+| `bns_section_mappings` | IPC/CrPC/IEA → BNS/BNSS/BSA official mappings |
+| `bns_case_mappings` | Per-case BNS mapping results |
+| `adr_assessments` | ADR scoring results per case |
+| `adr_factors` | Individual factor scores |
+| `ecourts_cases` | Live-synced eCourts case data |
+| `ecourts_hearings` | Hearing history records |
+| `predictions` | Win probability prediction results |
+| `users` | Auth — email, hashed password, created_at |
+| `user_sessions` | JWT session tracking |
+| `chatbot_sessions` | Chat history per user/case |
+| `feedback` | User feedback on AI responses |
+| `translations` | Cached translated summaries |
+| `ai_summaries` | Cached Groq-generated summaries |
+| `similar_cases` | Similarity search results cache |
+| `document_embeddings` | Vector chunk metadata |
+| `pipeline_queue` | Background processing job queue |
+| `intelligence_events` | DB layer audit/event log |
 
 ### MongoDB Collections
 
-- `raw_judgments`
-- `processing_queue`
-- `case_facts`
-- `case_summaries`
-- `case_translations`
-- `case_chunks`
-- `embeddings_metadata`
-- `case_predictions`
-- `ai_outputs`
-
-### MySQL Tables
-
-Created via `backend/scripts/init_legal_ai.sql`:
-
-- `cases`
-- `case_acts`
-- `case_facts`
-- `case_summaries`
-- `case_translations`
-- `case_predictions`
-- `case_audit_logs`
-- `learning_feedback`
-- `similar_cases`
-- `judge_analytics`
-- `chat_history`
-- `system_logs`
+| Collection | Purpose |
+|---|---|
+| `cases` | Raw extracted text, full document content |
+| `embeddings` | Sentence chunk vectors (384-dim) |
+| `judgments` | Raw judgment text for vector search |
 
 ---
 
-## SQL Schema Reference (Brief)
+## 🔌 API Reference
 
-Schema source: `backend/scripts/init_legal_ai.sql`.
+### Upload & Documents
+```
+POST   /upload                          # Upload PDF/image, enqueue pipeline
+GET    /cases/{case_number}             # Get case metadata
+GET    /raw/{case_number}               # Raw extracted text
+```
 
-### `cases` (main metadata)
+### AI Features
+```
+GET    /ai/summarize/{case_number}      # Generate AI case summary
+GET    /ai/translate/{case}?language=   # Translate summary/full text
+GET    /search/{case_number}            # Find similar cases (cosine)
+POST   /chatbot/ask                     # AI chatbot response
+```
 
-`case_id`, `case_number`, `case_prefix`, `case_number_numeric`, `case_year`, `title`, `court_name`, `court_level`, `bench`, `case_type`, `filing_date`, `registration_date`, `decision_date`, `petitioner`, `respondent`, `judge_names`, `advocates`, `disposition`, `citation`, `source`, `pdf_url`, `created_at`.
+### BNS Mapper
+```
+GET    /bns/lookup?act=IPC&section=302  # Single section lookup
+GET    /bns/case-report/{case}          # Full case BNS audit
+POST   /bns/analyze-text               # Extract + map citations from text
+POST   /bns/rewrite-draft              # Auto-rewrite document
+```
 
-### Other relational tables
+### ADR
+```
+GET    /adr/assessment/{case}           # Stored ADR assessment
+POST   /adr/manual-assess              # Manual input assessment
+POST   /adr/generate-application       # Draft Lok Adalat application
+```
 
-- `case_acts`: `act_id`, `case_id`, `act_name`, `section`, `description`
-- `case_facts`: `fact_id`, `case_id`, `fact_type`, `fact_text`
-- `case_summaries`: `summary_id`, `case_id`, `summary_type`, `summary_text`, `model_used`, `created_at`
-- `case_translations`: `translation_id`, `case_id`, `language_code`, `translated_summary`, `model_used`, `created_at`
-- `case_predictions`: `prediction_id`, `case_id`, `predicted_outcome`, `win_probability`, `confidence_score`, `key_factors`, `model_version`, `created_at`
-- `case_audit_logs`: metadata extraction and quality-gate audit JSON fields + flags
-- `learning_feedback`: correction learning records
-- `similar_cases`: cached similar-case links (`case_id`, `similar_case_id`, `similarity_score`)
-- `judge_analytics`: per-judge aggregate metrics
-- `chat_history`: user query, response, context IDs, response time
-- `system_logs`: module-level operational logs
+### eCourts
+```
+POST   /ecourts/guide                   # Detect search method, return steps
+POST   /ecourts/analyze-pasted          # Extract + map pasted case text
+GET    /ecourts/captcha                 # Fetch live CAPTCHA from portal
+POST   /ecourts/live-search             # Submit CNR + CAPTCHA, get live data
+GET    /ecourts/status/{case}           # Stored eCourts data for case
+```
+
+### Prediction
+```
+POST   /predict/manual                  # Win probability (manual input)
+```
+
+### Intelligence
+```
+GET    /intelligence/overview           # All 20 table stats
+GET    /intelligence/table/{name}       # Single table deep-dive
+```
+
+### Auth
+```
+POST   /auth/register                   # Create account
+POST   /auth/login                      # Get JWT token
+GET    /auth/me                         # Verify token, get user info
+```
 
 ---
 
-## MongoDB Schema Reference (Brief)
+## 🖥 Frontend Components
 
-Database: `legal_ai_mongo`.
-
-### `raw_judgments` (primary case document)
-
-Core fields used by current pipeline:
-
-- `source_type`, `case_number`, `title`, `case_id_mysql`
-- `file_info`: `file_name`, `stored_path`, `upload_time`
-- `judgment_text`: `raw_text`, `clean_text`, `paragraphs`, `language`, `token_count`
-- `case_metadata` (extracted metadata + quality flags)
-- `nlp_flags` (`text_cleaned`, `summarized`, `translated`, `embedded`, etc.)
-- `processing_status`, `created_at`, `last_updated_at`, `error_logs`
-
-### `processing_queue`
-
-- `case_id`, `case_number`, `stage`, `status`, `attempts`, `error`, `worker_id`, `started_at`, `finished_at`, `updated_at`, `created_at`
-
-### `case_chunks`
-
-- `case_id`, `case_number`, `chunk_index`, `chunk_type`, `text`, `created_at`
-
-### `embeddings_metadata`
-
-- `case_id`, `case_number`, `chunk_index`, `model`, `dimension`, `created_at`
-
-### `ai_outputs`
-
-- `case_id`, `case_number`, `stage`, `output`, `created_at`
-
-### Additional collections used by APIs/pipeline
-
-- `case_summaries`
-- `case_translations`
-- `case_predictions`
-- `case_facts`
+| Component | File | Purpose |
+|---|---|---|
+| **App.jsx** | `src/App.jsx` | Root — hash router, page renders, shared helpers |
+| **AuthPage** | `AuthPage.jsx` | Login/Register with animated dark form |
+| **UploadZone** | `UploadZone.jsx` | Drag-and-drop PDF upload with progress |
+| **Chatbot** | `Chatbot.jsx` | Floating AI chatbot with multi-language select |
+| **BNSComponents** | `BNSComponents.jsx` | SectionLookupPage, DraftAnalyzer, DocumentRewriter |
+| **ADRPanel** | `ADRPanel.jsx` | ADR scoring display + application generator |
+| **ECourtsAssistant** | `ECourtsAssistant.jsx` | 3-step guided portal navigator + paste analyzer |
+| **eCourtsStatus** | `eCourtsStatus.jsx` | CAPTCHA live sync, tabs: overview/history/AI |
+| **PredictionPage** | `PredictionPage.jsx` | Win probability form + results |
+| **IntelligenceDashboard** | `IntelligenceDashboard.jsx` | Live DB layer analytics |
+| **RecentCasesPanel** | `RecentCasesPanel.jsx` | Workspace history of uploaded cases |
 
 ---
 
-## MongoDB Atlas Setup (Brief)
+## ⚙️ Environment Setup
 
-1. Create an Atlas M0 cluster in a nearby region (for India, Mumbai is usually best).
-2. Create a database user (`Database Access`) with read/write privileges.
-3. Add IP access (`Network Access`) for your machine (avoid `0.0.0.0/0` in production).
-4. Copy Python connection string and set in `backend/.env`:
-   - `MONGO_URI=...`
-   - `MONGO_DB=legal_ai_mongo`
-5. Start backend and verify connection from logs (`MongoDB connected`).
-6. Upload one case and confirm collections are created/populated.
-
-Recommended initial collections:
-
-- `raw_judgments`
-- `processing_queue`
-- `case_chunks`
-- `embeddings_metadata`
-- `ai_outputs`
-- `case_summaries`
-- `case_translations`
-- `case_predictions`
-
----
-
-## Installation and Setup
-
-### Prerequisites
-
-- Node.js 20+
-- npm 10+
-- Python 3.11+
-- MongoDB (local or Atlas)
-- MySQL 8+
-- Tesseract OCR installed (required for image OCR)
-
-Windows OCR path used in code:
-
-`C:\Program Files\Tesseract-OCR\tesseract.exe`
-
-If your Tesseract is elsewhere, update `backend/utils/ocr_processor.py`.
-
-### 1) Clone
-
-```bash
-git clone <your-repo-url>
-cd mini-pro
-```
-
-### 2) Install Dependencies
-
-Option A: one command setup (recommended on Windows)
-
-```powershell
-npm run setup
-```
-
-Option B: manual
-
-```powershell
-npm run frontend:install
-npm run backend:install
-```
-
-### 3) Configure Environment Files
-
-```powershell
-Copy-Item backend\.env.example backend\.env
-Copy-Item frontend\.env.example frontend\.env
-```
-
-Edit both files with your credentials and local settings.
-
-### 4) Initialize MySQL Schema
-
-```bash
-mysql -u root -p < backend/scripts/init_legal_ai.sql
-```
-
-### 5) Run Services
-
-Backend:
-
-```powershell
-npm run backend:dev
-```
-
-Frontend:
-
-```powershell
-npm run frontend:dev
-```
-
-### 6) Open in Browser
-
-- Frontend: `http://127.0.0.1:5173`
-- Backend API: `http://127.0.0.1:8000`
-- Swagger Docs: `http://127.0.0.1:8000/docs`
-
-### Alternative Backend Start (direct uvicorn)
-
-```powershell
-.\backend\.venv\Scripts\Activate.ps1
-python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-Use either direct `uvicorn` or `npm run backend:dev`, not both at once.
-
----
-
-## Environment Variables
-
-### `backend/.env`
+Create `backend/.env` from the example:
 
 ```env
+# MongoDB
 MONGO_URI=mongodb://localhost:27017
 MONGO_DB=legal_ai_mongo
 
+# MySQL
 MYSQL_HOST=localhost
 MYSQL_USER=root
-MYSQL_PASSWORD=your_mysql_password
+MYSQL_PASSWORD=your_password
 MYSQL_DB=legal_ai
 
-GROQ_API_KEY=
+# LLM — Groq (cloud, fast)
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxx
 GROQ_MODEL=llama-3.3-70b-versatile
 
+# LLM — Ollama (local fallback)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3
 
+# CORS
 FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-
-HF_TOKEN=
 ```
 
-### `frontend/.env`
+Create `frontend/.env`:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-### Notes
+---
 
-- `HF_TOKEN` is optional but recommended for higher Hugging Face rate limits.
-- Do not commit `.env` files with real secrets.
+## 🚀 Installation & Running
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- MySQL 8.0+
+- MongoDB 6.0+
+- Tesseract OCR (`brew install tesseract` / `apt install tesseract-ocr`)
+- *(Optional)* Ollama for local LLM
+
+### Step 1 — Clone & Setup Backend
+
+```bash
+git clone <repo-url>
+cd mini-pro
+
+# Create virtual environment
+python -m venv backend/.venv
+source backend/.venv/bin/activate        # Windows: backend\.venv\Scripts\activate
+
+# Install dependencies
+pip install -r backend/requirements.txt
+
+# Copy and fill environment variables
+cp backend/.env.example backend/.env
+# Edit backend/.env with your credentials
+```
+
+### Step 2 — Setup Databases
+
+```bash
+# MySQL — create database and run migrations
+mysql -u root -p -e "CREATE DATABASE legal_ai;"
+# The app auto-creates tables on first startup
+
+# MongoDB — just ensure it's running
+mongod --dbpath /data/db
+```
+
+### Step 3 — Run Backend
+
+```bash
+# From project root
+uvicorn backend.main:app --reload --port 8000
+```
+
+Backend starts at: `http://127.0.0.1:8000`  
+Interactive API docs: `http://127.0.0.1:8000/docs`
+
+### Step 4 — Setup & Run Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env        # set VITE_API_BASE_URL=http://127.0.0.1:8000
+npm run dev
+```
+
+Frontend starts at: `http://localhost:5173`
 
 ---
 
-## How to Use
+## 📁 Project Structure
 
-1. Upload a legal PDF/image from the upload card.
-2. Wait for initial storage and metadata extraction.
-3. Run summary.
-4. Translate summary (or full raw text mode if needed).
-5. Retrieve similar cases.
-6. Ask the chatbot with selected mode (`auto`, `hybrid`, `rag`, `general`, `metadata`).
-7. Use manual prediction page for structured outcome probabilities.
-8. Monitor case coverage/status through dashboard endpoints.
-
----
-
-## Troubleshooting
-
-### `net::ERR_CONNECTION_REFUSED` in frontend
-
-Cause: backend is not running or stopped.
-
-Fix:
-
-- Start backend and keep terminal open.
-- Verify `http://127.0.0.1:8000/docs` works.
-- Ensure frontend uses correct `VITE_API_BASE_URL`.
-
-### File picker opens twice on upload
-
-Resolved in current code by avoiding duplicate click triggers in upload component.
-
-### MongoDB `AutoReconnect` / `getaddrinfo failed`
-
-Cause: temporary DNS/network issue reaching MongoDB host.
-
-Current worker behavior includes retry logic so transient failures do not permanently kill pipeline processing.
-
-### Hugging Face warning about unauthenticated requests
-
-Add `HF_TOKEN` in `backend/.env` and restart backend.
-
-### `405 Method Not Allowed` on `/cases/upload-case`
-
-Expected for `GET`; the endpoint supports `POST` upload only.
-
----
-
-## Security Notes
-
-- Never commit secrets (`.env`, API keys, DB passwords).
-- Rotate keys immediately if exposed.
-- CORS is configured for localhost by default; restrict origins before deployment.
-- Current codebase focuses on local/dev workflow; authentication and production hardening should be added before public deployment.
-
----
-
-## Future Enhancements
-
-- Voice assistant for legal Q&A
-- Better case-outcome modeling with richer training data
-- Lawyer recommendation and legal aid routing
-- Advanced analytics dashboard (judge/court trends, timelines)
-- RBAC + auth for multi-user secure usage
-- Background job queue backed by dedicated worker infrastructure
-
----
-
-## Contribution Guidelines
-
-1. Fork the repository.
-2. Create a feature branch (`feature/your-feature-name`).
-3. Keep commits focused and descriptive.
-4. Add/adjust tests where possible.
-5. Open a pull request with clear summary and screenshots (if UI changes).
-
-Suggested commit style:
-
-- `feat: add ...`
-- `fix: resolve ...`
-- `docs: update README ...`
-
----
-
-## License
-
-This project is currently for internal/academic usage.
-
-If you want open-source distribution, add a license file (for example `MIT` or `Apache-2.0`) and update this section.
-
----
-
-## Author
-
-**Your Name**
-
-- GitHub: `https://github.com/your-username`
-- LinkedIn: `https://linkedin.com/in/your-profile`
-- Email: `your-email@example.com`
-
----
-
-## Screenshots (Placeholder)
-
-Add screenshots to `docs/screenshots/` and reference them like below:
-
-```md
-![Upload Screen](docs/screenshots/upload.png)
-![Summary Screen](docs/screenshots/summary.png)
-![Chatbot Screen](docs/screenshots/chatbot.png)
+```
+mini-pro/
+├── backend/
+│   ├── main.py                      # FastAPI app, middleware, startup/shutdown
+│   ├── requirements.txt             # Python dependencies
+│   ├── .env / .env.example          # Environment config
+│   │
+│   ├── routes/                      # API route handlers (15 modules)
+│   │   ├── upload_routes.py         # Document upload + pipeline trigger
+│   │   ├── ai_routes.py             # Summarize, translate, case viewer
+│   │   ├── similarity_routes.py     # Cosine similarity search
+│   │   ├── chatbot_routes.py        # AI chatbot endpoint
+│   │   ├── bns_routes.py            # BNS lookup, analyze, rewrite
+│   │   ├── adr_routes.py            # ADR scoring + application gen
+│   │   ├── ecourts_routes.py        # eCourts guide, CAPTCHA, live-search
+│   │   ├── prediction_routes.py     # Win probability
+│   │   ├── manual_prediction_routes.py  # Manual prediction form
+│   │   ├── intelligence_routes.py   # DB intelligence layer
+│   │   ├── auth_routes.py           # Register/login/JWT
+│   │   ├── dashboard_routes.py      # Dashboard analytics
+│   │   ├── feedback_routes.py       # User feedback collection
+│   │   └── raw_judgment_routes.py   # Raw text retrieval
+│   │
+│   ├── services/                    # Business logic layer
+│   │   ├── pipeline_worker.py       # Background document processor (threading)
+│   │   ├── section_mapper_service.py    # IPC→BNS citation extraction
+│   │   ├── adr_suitability_service.py   # ADR scoring engine
+│   │   ├── ecourts_scraper.py           # NJDG portal scraper + CAPTCHA
+│   │   ├── ecourts_service.py           # eCourts DB operations
+│   │   ├── ecourts_scheduler.py         # APScheduler background sync
+│   │   ├── db_intelligence.py           # Live MySQL table analytics
+│   │   ├── metadata_pipeline.py         # Case metadata extraction
+│   │   └── learning_engine.py           # Adaptive scoring feedback loop
+│   │
+│   ├── ai/
+│   │   └── vector_store.py          # In-memory cosine similarity index
+│   │
+│   ├── database/
+│   │   ├── mongo.py                 # MongoDB connection pool
+│   │   └── mysql.py                 # MySQL connection pool
+│   │
+│   └── models/                      # Pydantic request/response schemas
+│
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx                  # Root component, all page functions, router
+│   │   ├── main.jsx                 # React entry point
+│   │   ├── styles.css               # Global design system (tokens, components)
+│   │   │
+│   │   └── components/
+│   │       ├── AuthPage.jsx         # Login + Register
+│   │       ├── UploadZone.jsx       # File upload UI
+│   │       ├── Chatbot.jsx          # Floating AI chatbot
+│   │       ├── BNSComponents.jsx    # Section Lookup, FIR Analyzer, Rewriter
+│   │       ├── ADRPanel.jsx         # ADR assessment display
+│   │       ├── ECourtsAssistant.jsx # AI guide + paste analyzer
+│   │       ├── eCourtsStatus.jsx    # CAPTCHA live sync panel
+│   │       ├── PredictionPage.jsx   # Win probability form
+│   │       ├── IntelligenceDashboard.jsx  # DB layer analytics
+│   │       └── RecentCasesPanel.jsx # Upload history
+│   │
+│   ├── package.json
+│   └── vite.config.js
+│
+├── uploads/                         # Uploaded PDF files (gitignored)
+├── logs/                            # Server logs
+└── scripts/                         # Utility / seed scripts
 ```
 
 ---
 
-If this project helped you, consider starring the repository.
+## 🎨 Design System
+
+### Color Tokens (CSS Variables)
+```css
+--bg-primary:    #0A0E1A    /* Deep navy background */
+--bg-elevated:   #11131C    /* Card surfaces */
+--text-primary:  #F5F7FA    /* Primary text */
+--text-secondary:#B8BCC8    /* Secondary text */
+--text-muted:    #6B7280    /* Placeholder / labels */
+--border-gold:   rgba(201,168,76,0.18)   /* Gold accent borders */
+--border-subtle: rgba(255,255,255,0.06)  /* Subtle dividers */
+```
+
+### Gold Accent Palette
+```
+#C9A84C  — Primary gold (buttons, active states, focus rings)
+#E3B341  — Bright gold (hover, highlights)
+#A0832A  — Deep gold (pressed states)
+```
+
+### Component Classes
+| Class | Usage |
+|---|---|
+| `.glass-card` | Dark glassmorphism card with gold border |
+| `.gold-input` | Dark input field with gold focus ring |
+| `.gold-textarea` | Multi-line version of gold-input |
+| `.gold-select` | Custom select with gold SVG chevron |
+| `.btn-primary` | Gold gradient button |
+| `.btn-secondary` | Outlined gold button |
+| `.btn-ghost` | Text-only button |
+| `.label-xs` | 10px uppercase tracking label |
+| `.form-label` | Input label above gold-input |
+| `.tab-bar` | Tab switcher container |
+| `.tab-btn` | Tab button with active gold state |
+| `.page-hero` | Dark slate-900 hero card |
+| `.progress-track` | Progress bar track |
+| `.progress-fill` | Animated progress fill |
+
+### Typography
+```
+Headings:    Cormorant Garamond (serif, legal authority feel)
+Body:        DM Sans (clean, readable)
+Code/Mono:   IBM Plex Mono (CNR numbers, section citations)
+```
+
+---
+
+## 🏗 How It Was Built
+
+### Phase 1 — Foundation
+1. Initialised **Vite + React** frontend and **FastAPI** backend
+2. Set up **MySQL** schema with 20 normalised tables
+3. Set up **MongoDB** for document storage and embedding vectors
+4. Built basic **upload pipeline** — PDF → text → MongoDB storage
+
+### Phase 2 — Core AI Features
+1. Integrated **pdfplumber** for structured PDF text extraction
+2. Added **pytesseract OCR** fallback for scanned image documents
+3. Connected **Groq API** (llama-3.3-70b) for AI summarisation
+4. Built **sentence-transformers** embedding pipeline + cosine similarity search
+5. Implemented **deep-translator** for 7-language translation
+
+### Phase 3 — Legal Intelligence
+1. Built **BNS Section Mapper** — 80+ mappings seeded from MHA gazette PDFs into MySQL
+2. Implemented **FIR text analyzer** using regex + DB lookup for citation extraction
+3. Built **draft auto-rewriter** with inline section substitution
+4. Implemented **ADR suitability engine** with NALSA-informed scoring rules
+
+### Phase 4 — eCourts Integration
+1. Built **eCourts web scraper** using `requests.Session` + BeautifulSoup for CAPTCHA handling
+2. Implemented **3-step AI guide** — free-text query → method detection → step-by-step instructions
+3. Added **paste-and-analyze** workflow — extract CNR/parties/sections from copied portal text
+4. Set up **APScheduler** for background case status refresh (every 6 hours)
+
+### Phase 5 — Auth & Security
+1. Built **JWT authentication** with bcrypt password hashing
+2. Added auth gate — entire app protected behind login
+3. Implemented global CORS middleware with regex origin matching
+4. Added global exception handler to preserve CORS headers on 500 errors
+
+### Phase 6 — DB Intelligence Layer
+1. Built **db_intelligence.py** service — live MySQL table analytics
+2. Created **IntelligenceDashboard** component with table search + metrics
+3. Routed all feature data access through centralised MySQL service layer
+
+### Phase 7 — UI/UX Overhaul (Dark Luxury)
+1. Designed **CSS design token system** in `styles.css` (CSS custom properties)
+2. Built `.glass-card`, `.gold-input`, `.gold-textarea`, `.gold-select` component classes
+3. Migrated all components from light Tailwind classes to dark luxury equivalents
+4. Standardised all page heroes to `bg-slate-900` card with ambient blobs
+5. Implemented responsive layouts across all 6 pages
+
+---
+
+## 🔑 Key Decisions
+
+| Decision | Reason |
+|---|---|
+| **FastAPI over Django** | Async-first, auto OpenAPI docs, faster for AI inference endpoints |
+| **MySQL as primary DB** | Relational integrity for legal mappings, indexed joins for BNS lookup |
+| **MongoDB alongside** | Flexible schema for raw text + high-dimensional embedding vectors |
+| **Hash router (no React Router)** | Simpler SPA deployment, no server-side routing config needed |
+| **Groq API (not OpenAI)** | Free tier, llama-3.3-70b is fast and excellent for legal reasoning |
+| **sentence-transformers local** | No API cost per embedding, runs on CPU |
+| **CAPTCHA via requests.Session** | Preserves cookies across CAPTCHA fetch + CNR submit to eCourts portal |
+| **APScheduler in-process** | Lightweight — avoids Celery/Redis setup for scheduled sync |
+
+---
+
+## 📄 License
+
+MIT License — © 2024 Mohammed Naseer Ahmed
+
+---
+
+*Built with ❤️ for Indian legal professionals. LexAI is an educational tool and does not constitute legal advice.*

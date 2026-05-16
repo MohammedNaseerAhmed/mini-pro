@@ -42,6 +42,15 @@ from backend.ai.prompt_builder import _build_general_legal_prompt, build_chat_pr
 from backend.ai.vector_store import vector_store
 from backend.database.mongo import get_db
 
+# ── New feature service imports ─────────────────────────────────────────────
+try:
+    from backend.services.ecourts_client import get_case_status as _get_ecourts
+    from backend.services.section_mapper_service import get_case_report as _get_bns
+    from backend.services.adr_suitability_service import get_assessment as _get_adr
+    _HAS_EXTENDED = True
+except ImportError:
+    _HAS_EXTENDED = False
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. INTENT CLASSIFICATION
@@ -446,6 +455,55 @@ def _find_relevant_sentences(question: str, text: str, min_overlap: int = 2) -> 
     ][:5]
 
 
+# ── New feature service imports ─────────────────────────────────────────────
+try:
+    from backend.services.ecourts_client import get_case_status as _get_ecourts
+    from backend.services.section_mapper_service import get_case_report as _get_bns
+    from backend.services.adr_suitability_service import get_assessment as _get_adr
+    _HAS_EXTENDED = True
+except ImportError:
+    _HAS_EXTENDED = False
+
+
+def _get_enriched_context(case_number: str) -> str:
+    """Build a context block containing eCourts, BNS, and ADR data."""
+    if not _HAS_EXTENDED or not case_number:
+        return ""
+    
+    parts = []
+    
+    # 1. eCourts
+    ec_data = _get_ecourts(case_number)
+    if ec_data:
+        next_date = ec_data.get("next_hearing_date")
+        parts.append(f"Live Case Status (eCourts): Stage: {ec_data.get('case_stage')}, Next Hearing: {next_date or 'Not scheduled'}")
+        history = ec_data.get("hearing_history") or []
+        if history:
+            adj_count = sum(1 for h in history[:6] if "adjourn" in str(h.get("business", "")).lower())
+            parts.append(f"Hearing Pattern: {adj_count} adjournments in last 6 hearings.")
+
+    # 2. BNS Mapper
+    bns_data = _get_bns(case_number)
+    if bns_data:
+        era = bns_data.get("document_era", "unknown")
+        parts.append(f"Legal Era: {era.upper()} (pre_2024=IPC, post_2024=BNS)")
+        citations = bns_data.get("citations") or []
+        dep_cits = [c for c in citations if c.get("is_deprecated")]
+        if dep_cits:
+            cit_lines = [f"- {c['cited_act']} {c['cited_section']} -> {c.get('mapped_act')} {c.get('mapped_section')} ({c.get('change_type')})" for c in dep_cits[:5]]
+            parts.append("Section Mappings:\n" + "\n".join(cit_lines))
+
+    # 3. ADR Suitability
+    adr_data = _get_adr(case_number)
+    if adr_data:
+        parts.append(f"ADR Assessment: Recommended: {adr_data.get('recommended_adr')}, Lok Adalat Suitability: {adr_data.get('lok_adalat_score')}/100")
+        
+    if not parts:
+        return ""
+        
+    return "=== Case Intelligence ===\n" + "\n".join(parts) + "\n========================\n"
+
+
 def _answer_rag_content(
     question: str,
     case_number: Optional[str] = None,
@@ -469,7 +527,14 @@ def _answer_rag_content(
             "mode": "rag_content",
         }
 
-    llm_context = "\n\n".join([f"[Case {cn}]\n{txt}" for cn, txt in contexts])
+    intelligence = ""
+    if case_number:
+        intelligence = _get_enriched_context(case_number)
+    elif case_ids:
+        # For multi-case search, maybe get intel for the top result
+        intelligence = _get_enriched_context(case_ids[0])
+
+    llm_context = intelligence + "\n\n" + "\n\n".join([f"[Case {cn}]\n{txt}" for cn, txt in contexts])
     llm_result = smart_chatbot(question, llm_context, chat_history=chat_history)
     llm_answer = None
     if llm_result:

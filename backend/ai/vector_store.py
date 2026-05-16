@@ -8,6 +8,12 @@ from backend.ai.embeddings import get_embedding
 logger = logging.getLogger(__name__)
 
 try:
+    from backend.services.section_mapper_service import normalize_sections_for_similarity
+    _HAS_NORM = True
+except ImportError:
+    _HAS_NORM = False
+
+try:
     import faiss
 except Exception:
     faiss = None
@@ -21,6 +27,8 @@ class VectorStore:
         self.case_ids = []      # parallel list of case_number strings
 
     def add_case(self, case_id: str, text: str) -> None:
+        if _HAS_NORM:
+            text = normalize_sections_for_similarity(text)
         emb = get_embedding(text)
         if emb is None:
             return
@@ -32,6 +40,8 @@ class VectorStore:
         self.case_ids.append(case_id)
 
     def search(self, text: str, k: int = 5):
+        if _HAS_NORM:
+            text = normalize_sections_for_similarity(text)
         emb = get_embedding(text)
         if emb is None:
             return []
@@ -79,6 +89,8 @@ class VectorStore:
                 # Only add if this case_number not already in index
                 if cn in self.case_ids:
                     continue
+                if _HAS_NORM:
+                    text = normalize_sections_for_similarity(text)
                 emb = get_embedding(text)
                 if emb is None:
                     continue

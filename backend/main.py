@@ -4,6 +4,18 @@ import re
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
 
+# Reduce noisy startup logs from third-party NLP/http libraries while keeping
+# backend application logs visible at INFO level.
+for _logger_name in (
+    "httpx",
+    "httpcore",
+    "urllib3",
+    "sentence_transformers",
+    "transformers",
+    "huggingface_hub",
+):
+    logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,7 +29,13 @@ from backend.routes.prediction_routes import router as prediction_router
 from backend.routes.dashboard_routes import router as dashboard_router
 from backend.routes.feedback_routes import router as feedback_router
 from backend.routes.manual_prediction_routes import router as manual_prediction_router
+from backend.routes.bns_routes import router as bns_router
+from backend.routes.adr_routes import router as adr_router
+from backend.routes.ecourts_routes import router as ecourts_router
+from backend.routes.intelligence_routes import router as intelligence_router
+from backend.routes.auth_routes import router as auth_router
 from backend.services.pipeline_worker import pipeline_worker
+from backend.services.ecourts_scheduler import start_ecourts_scheduler, stop_ecourts_scheduler
 from backend.ai.vector_store import vector_store
 
 DEFAULT_ALLOWED_ORIGINS = [
@@ -76,6 +94,11 @@ app.include_router(prediction_router)
 app.include_router(dashboard_router)
 app.include_router(feedback_router)
 app.include_router(manual_prediction_router)
+app.include_router(bns_router)
+app.include_router(adr_router)
+app.include_router(ecourts_router)
+app.include_router(intelligence_router)
+app.include_router(auth_router)
 # ---- startup ----
 @app.on_event("startup")
 def startup():
@@ -85,6 +108,7 @@ def startup():
         return
 
     pipeline_worker.start()
+    start_ecourts_scheduler()
     # Re-load previously embedded cases into in-memory vector index so
     # similarity search works immediately without re-processing documents.
     try:
@@ -98,6 +122,7 @@ def startup():
 def shutdown():
     if is_mongo_connected():
         pipeline_worker.stop()
+    stop_ecourts_scheduler()
     close_mongo_connection()
 
 # ---- routes ----

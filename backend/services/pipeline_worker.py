@@ -5,6 +5,25 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+# ── New feature service imports (non-blocking — wrapped in try/except) ──────
+try:
+    from backend.services.section_mapper_service import extract_and_map_sections as _bns_map
+    _HAS_BNS = True
+except ImportError:
+    _HAS_BNS = False
+
+try:
+    from backend.services.adr_suitability_service import assess_adr as _adr_assess
+    _HAS_ADR = True
+except ImportError:
+    _HAS_ADR = False
+
+try:
+    from backend.services.ecourts_service import get_stored_status as _ecourts_get_status
+    _HAS_ECOURTS = True
+except ImportError:
+    _HAS_ECOURTS = False
+
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
@@ -352,6 +371,15 @@ def _process_stage(job: Dict[str, Any]) -> str:
         )
         _insert_ai_output(case_id, case_number, "cleaned", {"token_count": len(normalized.split())})
         _log_system("pipeline", "cleaned", case_number)
+
+        # ── BNS Section Mapper (non-blocking) ─────────────────────────────
+        if _HAS_BNS:
+            try:
+                _bns_map(case_number, normalized, case_id_mysql)
+                logger.info("[BNS] Section mapping completed for %s", case_number)
+            except Exception as _bns_exc:
+                logger.warning("[BNS] Section mapping failed for %s: %s", case_number, _bns_exc)
+
         return "cleaned"
 
     if stage == "cleaned":
@@ -602,6 +630,29 @@ def _process_stage(job: Dict[str, Any]) -> str:
         return "predicted"
 
     if stage == "predicted":
+        # ── ADR Suitability Assessment (non-blocking) ───────────────────
+        if _HAS_ADR:
+            try:
+                stored_meta   = case_doc.get("case_metadata") or {}
+                _clean_for_adr = clean_text or _clean_text(raw_text)
+                _case_id_adr   = case_doc.get("case_id_mysql") or _get_case_id_mysql(case_number)
+                _ecourts_payload = None
+                if _HAS_ECOURTS:
+                    try:
+                        _ecourts_payload = _ecourts_get_status(case_number)
+                    except Exception as _ec_exc:
+                        logger.warning("[ADR] eCourts enrichment failed for %s: %s", case_number, _ec_exc)
+                _adr_assess(
+                    case_number=case_number,
+                    metadata=stored_meta,
+                    text=_clean_for_adr,
+                    case_id=_case_id_adr,
+                    ecourts_data=_ecourts_payload,
+                )
+                logger.info("[ADR] Assessment completed for %s", case_number)
+            except Exception as _adr_exc:
+                logger.warning("[ADR] Assessment failed for %s: %s", case_number, _adr_exc)
+
         db["raw_judgments"].update_one(
             {"_id": case_id},
             {"$set": {"processing_status": "completed", "last_updated_at": _utcnow()}},

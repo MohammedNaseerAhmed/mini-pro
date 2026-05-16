@@ -128,3 +128,128 @@ def audit_logs(case_id: str):
             cursor.close()
         if conn:
             conn.close()
+
+
+@router.get("/intelligence")
+def intelligence():
+    """
+    MySQL-only aggregate analytics across eCourts + BNS + ADR.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_mysql_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("SELECT COUNT(*) AS total_cases FROM cases")
+        total_cases = (cursor.fetchone() or {}).get("total_cases", 0)
+
+        cursor.execute("SELECT COUNT(*) AS ecourts_linked FROM ecourts_case_status")
+        ecourts_linked = (cursor.fetchone() or {}).get("ecourts_linked", 0)
+
+        cursor.execute("SELECT COUNT(*) AS deprecated_cases FROM case_section_reports WHERE has_deprecated_citations = TRUE")
+        deprecated_cases = (cursor.fetchone() or {}).get("deprecated_cases", 0)
+
+        cursor.execute("SELECT COUNT(*) AS adr_assessed FROM adr_suitability")
+        adr_assessed = (cursor.fetchone() or {}).get("adr_assessed", 0)
+
+        cursor.execute("SELECT COUNT(*) AS lok_eligible FROM adr_suitability WHERE is_lok_adalat_eligible = TRUE")
+        lok_eligible = (cursor.fetchone() or {}).get("lok_eligible", 0)
+
+        cursor.execute(
+            """
+            SELECT recommended_adr, COUNT(*) AS count
+            FROM adr_suitability
+            GROUP BY recommended_adr
+            ORDER BY count DESC
+            """
+        )
+        adr_mix = cursor.fetchall() or []
+
+        return {
+            "total_cases": total_cases,
+            "ecourts_linked": ecourts_linked,
+            "deprecated_citation_cases": deprecated_cases,
+            "adr_assessed_cases": adr_assessed,
+            "lok_adalat_eligible_cases": lok_eligible,
+            "coverage": {
+                "ecourts_pct": round((ecourts_linked / total_cases) * 100, 2) if total_cases else 0,
+                "adr_pct": round((adr_assessed / total_cases) * 100, 2) if total_cases else 0,
+                "deprecated_pct": round((deprecated_cases / total_cases) * 100, 2) if total_cases else 0,
+            },
+            "adr_recommendation_mix": adr_mix,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
+@router.get("/case-intelligence/{case_number:path}")
+def case_intelligence(case_number: str):
+    """
+    Combined per-case intelligence view:
+    - latest eCourts status
+    - BNS section mapping report
+    - ADR assessment
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = get_mysql_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT case_number, cnr_number, case_stage, next_hearing_date, last_hearing_date,
+                   judge_assigned, court_complex, source, last_synced_at
+            FROM ecourts_case_status
+            WHERE case_number = %s
+            ORDER BY last_synced_at DESC
+            LIMIT 1
+            """,
+            (case_number,),
+        )
+        ecourts = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT case_number, total_citations, unique_sections, deprecated_count, unmapped_count,
+                   document_era, has_deprecated_citations, citation_quality_score, created_at
+            FROM case_section_reports
+            WHERE case_number = %s
+            LIMIT 1
+            """,
+            (case_number,),
+        )
+        bns_report = cursor.fetchone()
+
+        cursor.execute(
+            """
+            SELECT case_number, case_type, lok_adalat_score, mediation_score, arbitration_score,
+                   negotiation_score, recommended_adr, is_lok_adalat_eligible, confidence_level,
+                   predicted_settlement_amount, predicted_settlement_pct, predicted_days_to_settle, assessed_at
+            FROM adr_suitability
+            WHERE case_number = %s
+            LIMIT 1
+            """,
+            (case_number,),
+        )
+        adr = cursor.fetchone()
+
+        return {
+            "case_number": case_number,
+            "ecourts": ecourts,
+            "section_mapping": bns_report,
+            "adr_assessment": adr,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()

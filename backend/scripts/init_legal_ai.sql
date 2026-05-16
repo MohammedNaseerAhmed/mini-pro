@@ -148,3 +148,32 @@ CREATE TABLE IF NOT EXISTS system_logs (
     details TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS ecourts_case_status (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    case_id INT NULL,
+    case_number VARCHAR(255) UNIQUE,
+    cnr_number VARCHAR(32),
+    court_complex VARCHAR(255),
+    next_hearing_date DATE,
+    last_hearing_date DATE,
+    case_stage VARCHAR(255),
+    judge_assigned VARCHAR(255),
+    pending_since DATE,
+    disposal_nature VARCHAR(255),
+    petitioner_name TEXT,
+    respondent_name TEXT,
+    act_section TEXT,
+    raw_response LONGTEXT,
+    source VARCHAR(100),
+    last_synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ecourts_sync_log (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    case_number VARCHAR(255),
+    cnr_number VARCHAR(32),
+    sync_type VARCHAR(50),
+    status VARCHAR(50),
+    synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,39 @@
+{
+    "base_scores": {
+        "motor_accident": {"lok_adalat": 88, "mediation": 70, "arbitration": 35, "negotiation": 60},
+        "consumer":       {"lok_adalat": 82, "mediation": 75, "arbitration": 40, "negotiation": 65},
+        "labour":         {"lok_adalat": 75, "mediation": 82, "arbitration": 55, "negotiation": 60},
+        "cheque_bounce":  {"lok_adalat": 85, "mediation": 65, "arbitration": 30, "negotiation": 70},
+        "matrimonial":    {"lok_adalat": 60, "mediation": 80, "arbitration": 20, "negotiation": 50},
+        "property":       {"lok_adalat": 45, "mediation": 65, "arbitration": 72, "negotiation": 40},
+        "commercial":     {"lok_adalat": 40, "mediation": 60, "arbitration": 85, "negotiation": 55},
+        "revenue":        {"lok_adalat": 50, "mediation": 55, "arbitration": 30, "negotiation": 45},
+        "municipal":      {"lok_adalat": 78, "mediation": 60, "arbitration": 25, "negotiation": 55},
+        "civil":          {"lok_adalat": 62, "mediation": 68, "arbitration": 55, "negotiation": 50},
+        "default":        {"lok_adalat": 55, "mediation": 60, "arbitration": 50, "negotiation": 45}
+    },
+    "complexity_multipliers": {
+        "Simple": 1.20,
+        "Moderate": 1.00,
+        "Complex": 0.72
+    },
+    "consent_deltas": {
+        "Both Willing": 15,
+        "One Willing": 5,
+        "Neutral": 0,
+        "Unwilling": -20
+    },
+    "other_factors": {
+        "duration_bonus_threshold_years": 2,
+        "duration_bonus_max": 15,
+        "duration_bonus_multiplier": 4,
+        "party_penalty_multiplier": 8,
+        "adjournment_threshold_count": 4,
+        "adjournment_bonus": 15,
+        "trial_stage_penalty": -10,
+        "lok_adalat_amount_limit": 20000000,
+        "small_dispute_threshold": 1000000,
+        "small_dispute_bonus": 10,
+        "large_dispute_penalty": -25
+    }
+}
